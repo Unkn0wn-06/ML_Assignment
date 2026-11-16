@@ -1,0 +1,21 @@
+{
+  "seed": 42,
+  "outlet_limit": 27.0,
+  "outlet_warning": 26.0,
+  "cooling_step": 0.5,
+  "episode_horizon": 100,
+  "reward_weights": {
+    "energy": 1.0,
+    "pue": 0.5,
+    "temperature": 10.0,
+    "switching": 0.05
+  },
+  "q_learning": {
+    "alpha": 0.15,
+    "gamma": 0.98,
+    "epsilon_start": 1.0,
+    "epsilon_end": 0.05,
+    "bins": 5
+  }
+}
+
