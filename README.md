@@ -40,6 +40,17 @@ python scripts/train.py --algorithm q_learning --data-dir data/raw/AAU --episode
 
 Use `--evaluation-episodes 5` (or more) for report results; the default of one episode per scenario is intended only as a quick smoke test. `--episode-horizon` can shorten an integration check, but retain the configured full horizon for final experiments.
 
+## Dashboard
+
+Launch the interactive results dashboard with:
+
+```powershell
+python -m pip install -e ".[ui]"
+streamlit run app.py
+```
+
+In the sidebar, select the extracted AAU data folder, controller, episode horizon, and evaluation repetitions, then select **Run experiment**. The dashboard displays scenario-level energy, efficiency, temperature, safety, action-stability, and transition-model diagnostics. It runs only the learned simulator; it must not be used to operate physical cooling equipment.
+
 ## Safety and scientific limits
 
 The AAU CSVs contain observations, not explicit cooling-control actions. The environment is therefore a learned counterfactual approximation. Interpret its policies as experimental recommendations only. Keep cooling setpoint and outlet-temperature constraints enabled, report violations separately from reward, and validate every result on held-out configuration/load scenarios.
