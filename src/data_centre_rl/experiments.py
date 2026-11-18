@@ -53,6 +53,7 @@ class ControllerResult:
     learning_curve: pd.DataFrame
     training_seconds: float
     proposed_supply_out_of_range_steps: int
+    agent: object | None = None
 
 
 def make_split(data: pd.DataFrame, split_name: str) -> tuple[pd.DataFrame, pd.DataFrame, set[str]]:
@@ -133,8 +134,11 @@ def run_controller(
     if controller not in CONTROLLERS:
         raise ValueError(f"Unknown controller: {controller}")
     train_env = _environment(context, outlet_limit=outlet_limit, horizon=horizon, training=True, safe_starts=safe_starts)
+    if not train_env.scenarios and controller not in {"Fixed setpoint","Rule-based"}:
+        raise ValueError(f"No feasible training scenarios at {outlet_limit:g} °C.")
     started = perf_counter()
     learning_curve = pd.DataFrame(columns=["step", "reward"])
+    agent = None
     if controller == "Fixed setpoint":
         action_fn = FixedPolicy().predict
     elif controller == "Rule-based":
@@ -167,17 +171,20 @@ def run_controller(
     )
     assert isinstance(evaluation, EvaluationResult)
     metrics = evaluation.scenario_metrics.copy()
+    metrics["seed"] = seed
     metrics["controller"] = controller
     trajectories = evaluation.trajectories.copy()
+    trajectories["seed"] = seed
     trajectories["controller"] = controller
     clipped_steps = int(trajectories["supply_clipped"].sum()) if not trajectories.empty else 0
     return ControllerResult(
         controller=controller,
         scenario_metrics=metrics,
         trajectories=trajectories,
-        learning_curve=learning_curve.assign(controller=controller),
+        learning_curve=learning_curve.assign(controller=controller, seed=seed),
         training_seconds=training_seconds,
         proposed_supply_out_of_range_steps=clipped_steps,
+        agent=agent,
     )
 
 
