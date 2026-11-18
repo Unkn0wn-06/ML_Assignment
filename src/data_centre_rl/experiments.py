@@ -27,6 +27,7 @@ class ModelDiagnostics:
     in_sample_by_scenario: pd.DataFrame
     held_out_by_scenario: pd.DataFrame
     feature_importances: pd.DataFrame
+    evaluation_predictions: pd.DataFrame
 
 
 @dataclass
@@ -85,6 +86,7 @@ def prepare_experiment(
         in_sample_by_scenario=model.score_by_scenario(train_transitions),
         held_out_by_scenario=model.score_by_scenario(evaluation_transitions),
         feature_importances=model.feature_importances(),
+        evaluation_predictions=model.predicted_vs_actual(evaluation_transitions),
     )
     return ExperimentContext(
         split_name=split_name,

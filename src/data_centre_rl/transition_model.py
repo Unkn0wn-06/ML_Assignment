@@ -80,6 +80,19 @@ class TransitionModel:
                 )
         return pd.DataFrame(records)
 
+    def predicted_vs_actual(self, transition_table: pd.DataFrame) -> pd.DataFrame:
+        """Return tidy prediction records for honest model-diagnostics charts."""
+        prediction = self.predict(transition_table)
+        records: list[pd.DataFrame] = []
+        metadata = transition_table[["scenario", "configuration", "load_fraction"]].reset_index(drop=True)
+        for column in TARGET_COLUMNS:
+            target = metadata.copy()
+            target["target"] = column
+            target["actual"] = transition_table[f"next_{column}"].to_numpy()
+            target["predicted"] = prediction[column].to_numpy()
+            records.append(target)
+        return pd.concat(records, ignore_index=True)
+
     def feature_importances(self) -> pd.DataFrame:
         """Expose random-forest feature importances with readable feature labels."""
         if self.pipeline is None:

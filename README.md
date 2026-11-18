@@ -42,14 +42,21 @@ Use `--evaluation-episodes 5` (or more) for report results; the default of one e
 
 ## Dashboard
 
-Launch the interactive results dashboard with:
+Launch the interactive control-room dashboard with:
 
 ```powershell
 python -m pip install -e ".[ui]"
 streamlit run app.py
 ```
 
-In the sidebar, select the extracted AAU data folder, controller, episode horizon, and evaluation repetitions, then select **Run experiment**. The dashboard displays scenario-level energy, efficiency, temperature, safety, action-stability, and transition-model diagnostics. It runs only the learned simulator; it must not be used to operate physical cooling equipment.
+In the sidebar, select one or more controllers, a scenario split, outlet limit, episode settings, and a seed, then select **Run experiment**. Results stay in the current dashboard session, so changing a chart filter does not retrain controllers.
+
+- **Overview:** safety and efficiency KPIs, 16-scenario heatmap, episode replay, controller trade-off scatter, transition-model PUE surface, and a schematic AAU-average server-room replay.
+- **Compare controllers:** physical metrics alongside reward, action distributions, learning curves, paired savings against the rule-based baseline, and CSV downloads.
+- **Model diagnostics:** predicted-versus-actual plots, in-sample/evaluation MAE, scenario error heatmap, feature importances, and proposed-supply clipping count.
+- **Source data:** dataset-quality KPIs, filtered AAU data export, supply-versus-load inspection, and time-series preview.
+
+The **Load generalisation: hold out 100%** split fits the transition model and tabular discretiser only on the 25%, 50%, and 75% scenarios, then evaluates on all 100% scenarios. This dashboard runs only the learned simulator; AAU files have no logged control actions and it must not be used to operate physical cooling equipment.
 
 ## Safety and scientific limits
 
