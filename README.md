@@ -46,7 +46,7 @@ Launch the interactive control-room dashboard with:
 
 ```powershell
 python -m pip install -e ".[ui]"
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
 In the sidebar, select one or more controllers, a scenario split, outlet limit, episode settings, and a seed, then select **Run experiment**. Results stay in the current dashboard session, so changing a chart filter does not retrain controllers.
@@ -57,6 +57,14 @@ In the sidebar, select one or more controllers, a scenario split, outlet limit, 
 - **Source data:** dataset-quality KPIs, filtered AAU data export, supply-versus-load inspection, and time-series preview.
 
 The **Load generalisation: hold out 100%** split fits the transition model and tabular discretiser only on the 25%, 50%, and 75% scenarios, then evaluates on all 100% scenarios. This dashboard runs only the learned simulator; AAU files have no logged control actions and it must not be used to operate physical cooling equipment.
+
+### Reading a run
+
+The default limit is 29 °C with a 28 °C warning. This is an assignment assumption informed by the AAU outlet distribution. Eligible starts have at least one future row and an outlet at or below the limit. The simulator prefers starts with a full horizon. Infeasible scenarios are listed separately. The first subsequent violation still ends an episode. Compare violation rates alongside peak temperature and episode length.
+
+For generalisation results, hold out the 100% loads or one configuration. In **All scenarios**, both error series use the fitting rows. The sensitivity bars perturb each evaluated scenario's median state by ±0.5 °C, bounded to the training range. Small responses indicate limited opportunity for simulated optimisation. Paired energy differences integrate power over common two-minute steps; intervals require repeated episodes. Increase consecutive seeds to display training variability.
+
+[Overview](docs/ui/overview-2800.png) · [Controller comparison](docs/ui/compare-controllers-2800.png) · [Model diagnostics](docs/ui/model-diagnostics-2800.png) · [Source data](docs/ui/source-data-2800.png). Each view also has a 1600 × 1000 capture in the same folder. To repeat the captures on Windows with Edge installed, install Playwright and run `python scripts/capture_dashboard.py` from the project folder.
 
 ## Safety and scientific limits
 
