@@ -42,6 +42,7 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         episode_horizon: int = 100,
         reward_weights: RewardWeights | None = None,
         scenarios: list[str] | None = None,
+        supply_bounds: tuple[float, float] | None = None,
     ) -> None:
         super().__init__()
         required = {"scenario", "configuration", "load_fraction", *STATE_COLUMNS}
@@ -54,7 +55,7 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         self.cooling_step = cooling_step
         self.episode_horizon = episode_horizon
         self.reward_weights = reward_weights or RewardWeights()
-        self.supply_bounds = transition_model.observed_supply_bounds(self.data)
+        self.supply_bounds = supply_bounds or transition_model.observed_supply_bounds(self.data)
         available = sorted(self.data["scenario"].unique())
         self.scenarios = scenarios or available
         unknown = set(self.scenarios).difference(available)
@@ -116,12 +117,8 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
             raise ValueError(f"Invalid action: {action}")
 
         current = self._frame.loc[self._index]
-        proposed_supply = float(
-            np.clip(
-                self._state["Cooling Supply Average"] + self.action_deltas[action] * self.cooling_step,
-                *self.supply_bounds,
-            )
-        )
+        unclipped_supply = self._state["Cooling Supply Average"] + self.action_deltas[action] * self.cooling_step
+        proposed_supply = float(np.clip(unclipped_supply, *self.supply_bounds))
         features = {
             **self._state,
             "Cooling Supply Average": proposed_supply,
@@ -157,5 +154,7 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         info.update(components)
         info["violation"] = violation
         info["proposed_supply"] = proposed_supply
+        info["unclipped_supply"] = float(unclipped_supply)
+        info["supply_clipped"] = bool(not np.isclose(unclipped_supply, proposed_supply))
         return self._observation(), float(reward), terminated, truncated, info
 

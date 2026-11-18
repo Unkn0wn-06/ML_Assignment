@@ -61,6 +61,36 @@ class TransitionModel:
             for column in TARGET_COLUMNS
         }
 
+    def score_by_scenario(self, transition_table: pd.DataFrame) -> pd.DataFrame:
+        """Return MAE per target and scenario for diagnostics."""
+        prediction = self.predict(transition_table)
+        records: list[dict[str, float | str]] = []
+        for scenario, indices in transition_table.groupby("scenario").groups.items():
+            for column in TARGET_COLUMNS:
+                records.append(
+                    {
+                        "scenario": scenario,
+                        "target": column,
+                        "mae": float(
+                            mean_absolute_error(
+                                transition_table.loc[indices, f"next_{column}"], prediction.loc[indices, column]
+                            )
+                        ),
+                    }
+                )
+        return pd.DataFrame(records)
+
+    def feature_importances(self) -> pd.DataFrame:
+        """Expose random-forest feature importances with readable feature labels."""
+        if self.pipeline is None:
+            raise RuntimeError("Fit the transition model before reading importances")
+        features = self.pipeline.named_steps["features"]
+        estimator = self.pipeline.named_steps["model"]
+        names = features.get_feature_names_out()
+        return pd.DataFrame({"feature": names, "importance": estimator.feature_importances_}).sort_values(
+            "importance", ascending=False, ignore_index=True
+        )
+
     def predict_one(self, features: dict[str, float | str]) -> dict[str, float]:
         frame = pd.DataFrame([features])
         return self.predict(frame).iloc[0].to_dict()

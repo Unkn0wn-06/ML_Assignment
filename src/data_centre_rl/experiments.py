@@ -1,0 +1,186 @@
+"""Leak-aware experiment orchestration shared by the dashboard and future scripts."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from time import perf_counter
+
+import pandas as pd
+
+from .baselines import FixedPolicy, RuleBasedPolicy
+from .data import TARGET_COLUMNS, make_transition_table, scenario_split
+from .environment import DataCenterCoolingEnv
+from .evaluation import EvaluationResult, evaluate_policy
+from .training import model_action, train_dqn, train_ppo, train_tabular
+from .transition_model import TransitionModel
+
+CONTROLLERS = ("Fixed setpoint", "Rule-based", "Q-Learning", "SARSA", "DQN", "PPO")
+
+
+@dataclass
+class ModelDiagnostics:
+    """Training and held-out transition-model diagnostics."""
+
+    in_sample_mae: dict[str, float]
+    held_out_mae: dict[str, float]
+    in_sample_by_scenario: pd.DataFrame
+    held_out_by_scenario: pd.DataFrame
+    feature_importances: pd.DataFrame
+
+
+@dataclass
+class ExperimentContext:
+    """Fitted transition model and data partitions for one split definition."""
+
+    split_name: str
+    training_data: pd.DataFrame
+    evaluation_data: pd.DataFrame
+    held_out_scenarios: set[str]
+    model: TransitionModel
+    diagnostics: ModelDiagnostics
+    supply_bounds: tuple[float, float]
+
+
+@dataclass
+class ControllerResult:
+    """A controller's real simulator results, learning curve, and run metadata."""
+
+    controller: str
+    scenario_metrics: pd.DataFrame
+    trajectories: pd.DataFrame
+    learning_curve: pd.DataFrame
+    training_seconds: float
+    proposed_supply_out_of_range_steps: int
+
+
+def make_split(data: pd.DataFrame, split_name: str) -> tuple[pd.DataFrame, pd.DataFrame, set[str]]:
+    """Return training/evaluation data for supported whole-scenario splits."""
+    if split_name == "All scenarios":
+        return data.copy(), data.copy(), set()
+    if split_name == "Load generalisation: hold out 100%":
+        held_out = set(data.loc[data["load_fraction"] == 1.0, "scenario"])
+        training, evaluation = scenario_split(data, held_out)
+        return training, evaluation, held_out
+    raise ValueError(f"Unsupported split: {split_name}")
+
+
+def prepare_experiment(
+    data: pd.DataFrame,
+    *,
+    split_name: str,
+    trees: int,
+    seed: int,
+) -> ExperimentContext:
+    """Fit a transition model exclusively on training scenarios for one split."""
+    training_data, evaluation_data, held_out = make_split(data, split_name)
+    train_transitions = make_transition_table(training_data)
+    evaluation_transitions = make_transition_table(evaluation_data)
+    model = TransitionModel(random_state=seed, n_estimators=trees).fit(train_transitions)
+    in_sample = model.score(train_transitions)
+    evaluation_mae = model.score(evaluation_transitions)
+    diagnostics = ModelDiagnostics(
+        in_sample_mae=in_sample,
+        held_out_mae=evaluation_mae,
+        in_sample_by_scenario=model.score_by_scenario(train_transitions),
+        held_out_by_scenario=model.score_by_scenario(evaluation_transitions),
+        feature_importances=model.feature_importances(),
+    )
+    return ExperimentContext(
+        split_name=split_name,
+        training_data=training_data,
+        evaluation_data=evaluation_data,
+        held_out_scenarios=held_out,
+        model=model,
+        diagnostics=diagnostics,
+        supply_bounds=model.observed_supply_bounds(training_data),
+    )
+
+
+def _environment(context: ExperimentContext, *, outlet_limit: float, horizon: int, training: bool):
+    data = context.training_data if training else context.evaluation_data
+    return DataCenterCoolingEnv(
+        data,
+        context.model,
+        outlet_limit=outlet_limit,
+        episode_horizon=horizon,
+        supply_bounds=context.supply_bounds,
+    )
+
+
+def run_controller(
+    context: ExperimentContext,
+    *,
+    controller: str,
+    outlet_limit: float,
+    horizon: int,
+    episodes_per_scenario: int,
+    tabular_episodes: int,
+    deep_timesteps: int,
+    seed: int,
+    progress_callback: Callable[[int, int, float], None] | None = None,
+) -> ControllerResult:
+    """Train (where needed) and evaluate one controller under a prepared split."""
+    if controller not in CONTROLLERS:
+        raise ValueError(f"Unknown controller: {controller}")
+    train_env = _environment(context, outlet_limit=outlet_limit, horizon=horizon, training=True)
+    started = perf_counter()
+    learning_curve = pd.DataFrame(columns=["step", "reward"])
+    if controller == "Fixed setpoint":
+        action_fn = FixedPolicy().predict
+    elif controller == "Rule-based":
+        action_fn = RuleBasedPolicy(warning_temperature=outlet_limit - 1).predict
+    elif controller in {"Q-Learning", "SARSA"}:
+        algorithm = "q_learning" if controller == "Q-Learning" else "sarsa"
+        agent = train_tabular(
+            train_env,
+            context.training_data,
+            algorithm=algorithm,
+            episodes=tabular_episodes,
+            bins=5,
+            seed=seed,
+            progress_callback=progress_callback,
+        )
+        learning_curve = agent.learning_curve
+        action_fn = lambda observation: agent.select_action(observation, explore=False)
+    else:
+        trainer = train_dqn if controller == "DQN" else train_ppo
+        agent = trainer(train_env, total_timesteps=deep_timesteps, seed=seed, progress_callback=progress_callback)
+        learning_curve = agent.learning_curve
+        action_fn = lambda observation: model_action(agent, observation)
+    training_seconds = perf_counter() - started
+    evaluation = evaluate_policy(
+        _environment(context, outlet_limit=outlet_limit, horizon=horizon, training=False),
+        action_fn,
+        episodes_per_scenario=episodes_per_scenario,
+        seed=seed,
+        return_trajectories=True,
+    )
+    assert isinstance(evaluation, EvaluationResult)
+    metrics = evaluation.scenario_metrics.copy()
+    metrics["controller"] = controller
+    trajectories = evaluation.trajectories.copy()
+    trajectories["controller"] = controller
+    clipped_steps = int(trajectories["supply_clipped"].sum()) if not trajectories.empty else 0
+    return ControllerResult(
+        controller=controller,
+        scenario_metrics=metrics,
+        trajectories=trajectories,
+        learning_curve=learning_curve.assign(controller=controller),
+        training_seconds=training_seconds,
+        proposed_supply_out_of_range_steps=clipped_steps,
+    )
+
+
+def diagnostics_frame(diagnostics: ModelDiagnostics) -> pd.DataFrame:
+    """Format in-sample and evaluation MAE for a compact diagnostics chart."""
+    records = []
+    for target in TARGET_COLUMNS:
+        records.extend(
+            [
+                {"target": target, "partition": "In-sample", "mae": diagnostics.in_sample_mae[target]},
+                {"target": target, "partition": "Evaluation", "mae": diagnostics.held_out_mae[target]},
+            ]
+        )
+    return pd.DataFrame(records)
+
