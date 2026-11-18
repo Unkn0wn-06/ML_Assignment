@@ -63,6 +63,11 @@ def make_split(data: pd.DataFrame, split_name: str) -> tuple[pd.DataFrame, pd.Da
         held_out = set(data.loc[data["load_fraction"] == 1.0, "scenario"])
         training, evaluation = scenario_split(data, held_out)
         return training, evaluation, held_out
+    if split_name.startswith("Hold out configuration: "):
+        configuration = split_name.removeprefix("Hold out configuration: ")
+        held_out = set(data.loc[data["configuration"] == configuration, "scenario"])
+        training, evaluation = scenario_split(data, held_out)
+        return training, evaluation, held_out
     raise ValueError(f"Unsupported split: {split_name}")
 
 
@@ -99,13 +104,14 @@ def prepare_experiment(
     )
 
 
-def _environment(context: ExperimentContext, *, outlet_limit: float, horizon: int, training: bool):
+def _environment(context: ExperimentContext, *, outlet_limit: float, horizon: int, training: bool, safe_starts: bool):
     data = context.training_data if training else context.evaluation_data
     return DataCenterCoolingEnv(
         data,
         context.model,
         outlet_limit=outlet_limit,
         episode_horizon=horizon,
+        safe_starts=safe_starts,
         supply_bounds=context.supply_bounds,
     )
 
@@ -120,18 +126,19 @@ def run_controller(
     tabular_episodes: int,
     deep_timesteps: int,
     seed: int,
+    safe_starts: bool = True,
     progress_callback: Callable[[int, int, float], None] | None = None,
 ) -> ControllerResult:
     """Train (where needed) and evaluate one controller under a prepared split."""
     if controller not in CONTROLLERS:
         raise ValueError(f"Unknown controller: {controller}")
-    train_env = _environment(context, outlet_limit=outlet_limit, horizon=horizon, training=True)
+    train_env = _environment(context, outlet_limit=outlet_limit, horizon=horizon, training=True, safe_starts=safe_starts)
     started = perf_counter()
     learning_curve = pd.DataFrame(columns=["step", "reward"])
     if controller == "Fixed setpoint":
         action_fn = FixedPolicy().predict
     elif controller == "Rule-based":
-        action_fn = RuleBasedPolicy(warning_temperature=outlet_limit - 1).predict
+        action_fn = RuleBasedPolicy(warning_temperature=outlet_limit - 1, lower_temperature=min(24, outlet_limit - 3)).predict
     elif controller in {"Q-Learning", "SARSA"}:
         algorithm = "q_learning" if controller == "Q-Learning" else "sarsa"
         agent = train_tabular(
@@ -152,7 +159,7 @@ def run_controller(
         action_fn = lambda observation: model_action(agent, observation)
     training_seconds = perf_counter() - started
     evaluation = evaluate_policy(
-        _environment(context, outlet_limit=outlet_limit, horizon=horizon, training=False),
+        _environment(context, outlet_limit=outlet_limit, horizon=horizon, training=False, safe_starts=safe_starts),
         action_fn,
         episodes_per_scenario=episodes_per_scenario,
         seed=seed,
@@ -185,4 +192,23 @@ def diagnostics_frame(diagnostics: ModelDiagnostics) -> pd.DataFrame:
             ]
         )
     return pd.DataFrame(records)
+
+def action_sensitivity(context):
+    """One-factor changes around each scenario's median state, within training bounds."""
+    from .data import STATE_COLUMNS
+
+    groups = ["scenario", "configuration", "load_fraction"]
+    typical = context.evaluation_data.groupby(groups, as_index=False)[STATE_COLUMNS].median()
+    supply = "Cooling Supply Average"
+    typical[supply] = typical[supply].clip(*context.supply_bounds)
+    targets = ["Outlet Avg Temp", "P_DC"]
+    baseline = context.model.predict(typical)[targets]
+    records = []
+    for shift in (-0.5, 0.5):
+        changed = typical.copy()
+        changed[supply] = (changed[supply] + shift).clip(*context.supply_bounds)
+        differences = context.model.predict(changed)[targets] - baseline
+        records.append(differences.assign(scenario=typical.scenario, shift=shift,
+                                          applied=changed[supply] - typical[supply]))
+    return pd.concat(records, ignore_index=True)
 

@@ -1,7 +1,9 @@
 {
   "seed": 42,
-  "outlet_limit": 27.0,
-  "outlet_warning": 26.0,
+  "outlet_limit": 29.0,
+  "outlet_warning": 28.0,
+  "limit_assumption": "Outlet limit selected near the AAU p75-p90 range; the assignment specifies no limit.",
+  "safe_starts": true,
   "cooling_step": 0.5,
   "episode_horizon": 100,
   "reward_weights": {

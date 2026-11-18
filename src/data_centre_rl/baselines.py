@@ -15,7 +15,7 @@ class FixedPolicy:
 class RuleBasedPolicy:
     """Hysteresis controller using only the observed outlet temperature."""
 
-    def __init__(self, warning_temperature: float = 26.0, lower_temperature: float = 24.0) -> None:
+    def __init__(self, warning_temperature: float = 28.0, lower_temperature: float = 24.0) -> None:
         if lower_temperature >= warning_temperature:
             raise ValueError("lower_temperature must be below warning_temperature")
         self.warning_temperature = warning_temperature

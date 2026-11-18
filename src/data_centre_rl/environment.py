@@ -37,7 +37,8 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         scenario_data: pd.DataFrame,
         transition_model: TransitionModel,
         *,
-        outlet_limit: float = 27.0,
+        safe_starts: bool = True,
+        outlet_limit: float = 29.0,
         cooling_step: float = 0.5,
         episode_horizon: int = 100,
         reward_weights: RewardWeights | None = None,
@@ -68,6 +69,15 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         if any(len(frame) < 2 for frame in self.frames.values()):
             raise ValueError("Every scenario needs at least two rows")
 
+        self.start_rows = {}
+        for scenario, frame in self.frames.items():
+            candidates = np.arange(len(frame) - 1)
+            if safe_starts:
+                candidates = candidates[frame["Outlet Avg Temp"].to_numpy()[candidates] <= outlet_limit]
+            full_length = candidates[candidates <= max(0, len(frame) - episode_horizon - 1)]
+            self.start_rows[scenario] = full_length if len(full_length) else candidates
+        self.infeasible = [name for name, rows in self.start_rows.items() if not len(rows)]
+        self.scenarios = [name for name in self.scenarios if name not in self.infeasible]
         self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(
             low=np.full(len(STATE_COLUMNS), -1_000_000.0, dtype=np.float32),
@@ -97,13 +107,14 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
         super().reset(seed=seed)
         selected = (options or {}).get("scenario")
+        if not self.scenarios or selected in self.infeasible:
+            raise ValueError("Infeasible at this limit: no eligible initial state")
         if selected is None:
             selected = self.np_random.choice(self.scenarios).item()
         if selected not in self.frames:
             raise ValueError(f"Unknown scenario: {selected}")
         self._frame = self.frames[selected]
-        max_start = max(0, len(self._frame) - self.episode_horizon - 1)
-        self._index = int(self.np_random.integers(0, max_start + 1))
+        self._index = int(self.np_random.choice(self.start_rows[selected]))
         self._steps = 0
         self._last_action = 1
         row = self._frame.loc[self._index]
