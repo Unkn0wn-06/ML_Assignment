@@ -1,5 +1,6 @@
 """Reproduce the held-out three-seed comparison in docs/ui/REPORT.md."""
 
+from math import ceil
 from pathlib import Path
 
 import pandas as pd
@@ -14,74 +15,119 @@ def table(frame):
     return "\n".join("| " + " | ".join(row) + " |" for row in rows)
 
 
-def main():
+def benchmark(variant):
     data = load_csv_directory("data/raw/AAU")
-    diagnostics = []
-    results = []
-    for variant in VARIANTS:
-        context = prepare_experiment(
-            data,
-            split_name="Load generalisation: hold out 100%",
-            variant=variant,
-            trees=50,
-            seed=42,
-        )
-        sensitivity = action_sensitivity(context)
-        flags = sensitivity.loc[(sensitivity.applied < 0) & (sensitivity.P_DC < 0), "scenario"]
-        diagnostics.append(
-            {
-                "Simulator": variant,
-                **{key: f"{value:.4f}" for key, value in context.diagnostics.held_out_mae.items()},
-                "Mean abs Δ outlet (°C)": f"{sensitivity['Outlet Avg Temp'].abs().mean():.4f}",
-                "Mean abs Δ power (kW)": f"{sensitivity.P_DC.abs().mean():.4f}",
-                "Power sign flags": ", ".join(flags) or "None",
-            }
-        )
-        for controller in ("Rule-based", "Q-Learning", "SARSA"):
-            seeds = []
-            for seed in (42, 43, 44):
-                run = run_controller(
-                    context,
-                    controller=controller,
-                    outlet_limit=29,
-                    horizon=50,
-                    episodes_per_scenario=3,
-                    tabular_episodes=250,
-                    deep_timesteps=0,
-                    seed=seed,
-                )
-                metrics = run.scenario_metrics
-                seeds.append(
+    context = prepare_experiment(
+        data,
+        split_name="Load generalisation: hold out 100%",
+        variant=variant,
+        trees=50,
+        seed=42,
+    )
+    sensitivity = action_sensitivity(context)
+    flags = sensitivity.loc[(sensitivity.applied < 0) & (sensitivity.P_DC < 0), "scenario"]
+    diagnostics = {
+        "Simulator": variant,
+        **{key: f"{value:.4f}" for key, value in context.diagnostics.held_out_mae.items()},
+        "Mean abs Δ outlet (°C)": f"{sensitivity['Outlet Avg Temp'].abs().mean():.4f}",
+        "Mean abs Δ power (kW)": f"{sensitivity.P_DC.abs().mean():.4f}",
+        "Terminal cost per remaining step": ceil(
+            context.training_data.P_DC.max() + 0.5 * context.training_data.PUE.max()
+        ),
+        "Power sign flags": ", ".join(flags) or "None",
+    }
+    rows = []
+    base_cache = {}
+    corrected = {}
+    legacy_baseline = None
+    for legacy in [True, False]:
+        for legacy_state in [True, False]:
+            for controller in ["Rule-based (no hysteresis)", "Rule-based", "Q-Learning", "SARSA"]:
+                by_seed = []
+                for seed in [42, 43, 44]:
+                    key = (controller, seed, legacy)
+                    if key in base_cache:
+                        metrics = base_cache[key]
+                    else:
+                        run = run_controller(
+                            context,
+                            controller=controller,
+                            outlet_limit=29,
+                            horizon=50,
+                            episodes_per_scenario=3,
+                            tabular_episodes=300,
+                            deep_timesteps=0,
+                            legacy_termination=legacy,
+                            legacy_state=legacy_state,
+                            seed=seed,
+                        )
+                        metrics = run.scenario_metrics
+                        if controller.startswith("Rule-based"):
+                            base_cache[key] = metrics
+                    by_seed.append(
+                        {
+                            "Any violation (%)": 100 * metrics.any_violation.mean(),
+                            "Violating steps (%)": 100
+                            * metrics.violation_count.sum()
+                            / metrics.steps.sum(),
+                            "Steps": metrics.steps.mean(),
+                            "Return / step": metrics.return_per_step.mean(),
+                            "Power (kW)": metrics.mean_p_dc.mean(),
+                            "Switching (%)": 100 * metrics.switching_rate.mean(),
+                        }
+                    )
+                frame = pd.DataFrame(by_seed)
+                if legacy and not legacy_state and controller == "Rule-based":
+                    legacy_baseline = frame
+                if not legacy and not legacy_state:
+                    corrected[controller] = frame
+                rows.append(
                     {
-                        "Episodes violated (%)": 100 * metrics.violated.mean(),
-                        "Mean steps": metrics.steps_survived.mean(),
-                        "Switching (%)": 100 * metrics.switching_rate.mean(),
-                        "Power (kW)": metrics.mean_p_dc.mean(),
+                        "Termination": "Legacy" if legacy else "Serious",
+                        "State": "5-bin" if legacy_state else "Safety",
+                        "Controller": controller,
+                        **{k: f"{frame[k].mean():.3f} ± {frame[k].std():.3f}" for k in frame},
                     }
                 )
-            spread = pd.DataFrame(seeds)
-            results.append(
-                {
-                    "Simulator": variant,
-                    "Controller": controller,
-                    **{
-                        key: f"{spread[key].mean():.3f} ± {spread[key].std():.3f}" for key in spread
-                    },
-                }
-            )
-            print(variant, controller, results[-1], flush=True)
+            print(variant, legacy, legacy_state, flush=True)
+    comparisons = []
+    baseline = corrected["Rule-based"]
+    for metric in ["Steps", "Any violation (%)", "Violating steps (%)"]:
+        before, after = legacy_baseline[metric], baseline[metric]
+        comparisons.append(
+            f"Hysteresis {metric}, legacy to corrected termination: {before.mean():.3f} ± {before.std():.3f} to {after.mean():.3f} ± {after.std():.3f}."
+        )
+
+    for name in ["Q-Learning", "SARSA"]:
+        diff = corrected[name] - corrected["Rule-based"]
+        comparisons.append(
+            f"{name} minus hysteresis, paired by seed: any violation {diff['Any violation (%)'].mean():+.2f} ± {diff['Any violation (%)'].std():.2f} percentage points; mean power {diff['Power (kW)'].mean():+.4f} ± {diff['Power (kW)'].std():.4f} kW."
+        )
+        saving_pct = -100 * diff["Power (kW)"].mean() / baseline["Power (kW)"].mean()
+        hot_steps = diff["Violating steps (%)"].mean()
+        qualifies = saving_pct >= 1 and diff["Any violation (%)"].mean() <= 0 and hot_steps <= 0
+        comparisons.append(
+            f"{name} {'met' if qualifies else 'did not meet'} the joint benchmark of at least 1% lower mean power and no increase in either safety measure. Mean power saving was {saving_pct:+.2f}%, and the violating-step share changed by {hot_steps:+.2f} percentage points."
+        )
+    return diagnostics, table(pd.DataFrame(rows)), comparisons
+
+
+def main():
+    from concurrent.futures import ProcessPoolExecutor
+
+    with ProcessPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(benchmark, VARIANTS))
     report = [
         "# Held-out cooling experiments",
-        "Fit each simulator once (50 trees or boosting iterations, fit seed 42) on all 25%, 50% and 75% load files. Evaluate on the four 100% files. Each controller used the same seeded starts, limit 29 °C, eligible starts, horizon 50 and three episodes per scenario. Tabular policies trained for 250 episodes. Results give mean ± sample standard deviation of three seed-level episode means (42–44).",
-        "## Surrogate validation",
-        "First five numeric columns are held-out next-step MAE in source units. Sensitivity averages absolute responses to both ±0.5 °C supply perturbations around each held-out scenario median. Sign flags identify a predicted power decrease under stronger cooling.",
-        table(pd.DataFrame(diagnostics)),
-        "## Simulated control",
-        "A violation contributes one failed episode regardless of its duration. Duration includes the terminal transition. Switching is the fraction of consecutive action pairs that differ. Power is the episode mean over its observed duration.",
-        table(pd.DataFrame(results)),
-        "The level forest remains the reference. Temperature monotonicity is an imposed physical assumption. Differences between controllers depend on the surrogate, episode duration and seed. Logged AAU data do not identify causal savings.",
+        "Each model was fitted once on 25%, 50% and 75% loads (50 estimators, seed 42). Evaluation used the four held-out 100% scenarios, three matched starts per scenario for each seed (42–44), limit 29 °C and horizon 50. Each tabular run trained for 300 episodes. Values are seed means ± sample standard deviation. The violating-step percentage pools steps within each seed. Other metrics average episodes within each seed. The two rule controllers do not use a state encoder.",
+        "## Reward design correction",
+        "The original pipeline analysis supplied with the assignment measured a typical step cost of about 3.25, a mean excess of 0.16 °C, a mean violation cost of about 0.43 and a return–duration correlation of −0.96. Ending 10, 30 or 49 steps early avoided about 33, 98 or 159 cost units. Corrected runs continue through mild excess, charging quadratic cost each step. Excess above 1.5 °C ends the run and incurs the training-derived cost for each remaining step. The tables compare both rules at matched starts and report return per observed step.",
+        "## Simulator validation",
+        table(pd.DataFrame([item[0] for item in results])),
+        "Sensitivity is the mean absolute response to a ±0.5 °C supply change around the median held-out state. The small predicted outlet responses give the agent little leverage in these scenarios.",
     ]
-
+    for variant, (_, rows, comparisons) in zip(VARIANTS, results, strict=True):
+        report.extend(["## " + variant, rows, *comparisons])
     Path("docs/ui/REPORT.md").write_text("\n\n".join(report) + "\n", encoding="utf-8")
 
 
