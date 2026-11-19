@@ -21,6 +21,7 @@ from data_centre_rl.experiments import (
     prepare_experiment,
     run_controller,
 )
+from data_centre_rl.transition_model import VARIANTS
 from ui.charts import (
     action_distribution_chart,
     controller_scatter,
@@ -203,6 +204,7 @@ with st.sidebar:
         ],
     )
     st.caption("SIMULATION")
+    variant=st.selectbox("Simulator variant",VARIANTS,help="Levels predicts absolute outcomes. Deltas learns temperature changes. Monotone boosting assumes warmer supply cannot lower predicted outlet or return temperature.")
     safe = st.checkbox("Start at or below the limit", True)
     outlet_limit = st.slider("Outlet limit (°C)", 24.0, 32.0, 29.0, 0.25)
     horizon = st.slider("Episode horizon", 5, 200, 30, 5)
@@ -235,7 +237,7 @@ if run and data is not None:
     started = monotonic()
     try:
         with st.spinner("Running the learned simulator..."):
-            context = cached_context(data, split_name=split_name, trees=trees, seed=int(seed))
+            context = cached_context(data, split_name=split_name,variant=variant, trees=trees, seed=int(seed))
             results: dict[str, ControllerResult] = {}
             cache = st.session_state.setdefault("run_cache", {})
             for index, controller in enumerate(controllers):
@@ -555,6 +557,28 @@ with diagnostics_tab:
             st.info(
                 "All scenarios uses the same rows for fitting and evaluation. Both MAE bars are identical by design."
             )
+        with card(st,"Simulator comparison","Validation uses the selected hold-out, or the 100% load hold-out for an all-scenarios run."):
+            split=context.split_name if context.held_out_scenarios else "Load generalisation: hold out 100%"
+            diagnostics=[]
+            responses=[]
+            for choice in VARIANTS:
+                if split.startswith("Load") and data.load_fraction.nunique()<2:
+                    st.info("Load comparison requires training and held-out loads.")
+                    break
+                candidate=cached_context(data,split_name=split,variant=choice,trees=context.model.n_estimators,seed=context.model.random_state)
+                effects=action_sensitivity(candidate)
+                responses.append(effects.assign(variant=choice,spurious=(effects.applied<0)&(effects.P_DC<0)))
+                diagnostics.append({"variant":choice,**candidate.diagnostics.held_out_mae,"Mean |Δ outlet|":effects["Outlet Avg Temp"].abs().mean(),"Mean |Δ kW|":effects.P_DC.abs().mean()})
+            if diagnostics:
+                scores=pd.DataFrame(diagnostics).set_index("variant")
+                st.dataframe(scores.style.format("{:.4f}"))
+                for choice in VARIANTS[1:]:
+                    worse=[target for target in context.diagnostics.in_sample_mae if scores.loc[choice,target]>1.10*scores.iloc[0][target]]
+                    if worse:
+                        st.caption(f"{choice}: held-out MAE exceeds the levels model by >10% for {', '.join(worse)}.")
+                details=pd.concat(responses,ignore_index=True)
+                st.caption("Flagged scenarios predict lower power when supply is lowered. This may be a spurious correlation.")
+                st.dataframe(details.style.format(precision=4))
         sensitivity = action_sensitivity(context)
         with card(
             st,
@@ -643,6 +667,8 @@ with diagnostics_tab:
             right, "Feature importance", "Relative contribution to forest split impurity reduction."
         ):
             importance = context.diagnostics.feature_importances.copy()
+            if importance.empty:
+                st.caption("Forest impurity importance is unavailable for this boosting model.")
             importance["feature"] = importance.feature.str.replace(
                 r"^(numeric__|configuration__configuration_)", "", regex=True
             )

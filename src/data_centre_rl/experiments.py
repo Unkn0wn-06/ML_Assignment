@@ -13,7 +13,7 @@ from .data import TARGET_COLUMNS, make_transition_table, scenario_split
 from .environment import DataCenterCoolingEnv
 from .evaluation import EvaluationResult, evaluate_policy
 from .training import model_action, train_dqn, train_ppo, train_tabular
-from .transition_model import TransitionModel
+from .transition_model import VARIANTS, TransitionModel
 
 CONTROLLERS = ("Fixed setpoint", "Rule-based", "Q-Learning", "SARSA", "DQN", "PPO")
 
@@ -76,6 +76,7 @@ def prepare_experiment(
     data: pd.DataFrame,
     *,
     split_name: str,
+    variant: str = VARIANTS[0],
     trees: int,
     seed: int,
 ) -> ExperimentContext:
@@ -83,7 +84,7 @@ def prepare_experiment(
     training_data, evaluation_data, held_out = make_split(data, split_name)
     train_transitions = make_transition_table(training_data)
     evaluation_transitions = make_transition_table(evaluation_data)
-    model = TransitionModel(random_state=seed, n_estimators=trees).fit(train_transitions)
+    model = TransitionModel(random_state=seed, n_estimators=trees,variant=variant).fit(train_transitions)
     in_sample = model.score(train_transitions)
     evaluation_mae = model.score(evaluation_transitions)
     diagnostics = ModelDiagnostics(

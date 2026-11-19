@@ -69,6 +69,7 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         if any(len(frame) < 2 for frame in self.frames.values()):
             raise ValueError("Every scenario needs at least two rows")
 
+        self.records={name: frame.to_dict("records") for name,frame in self.frames.items()}
         self.start_rows = {}
         for scenario, frame in self.frames.items():
             candidates = np.arange(len(frame) - 1)
@@ -95,9 +96,9 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
 
     def _info(self, prediction: dict[str, float] | None = None) -> dict[str, Any]:
         info: dict[str, Any] = {
-            "scenario": self._frame.loc[self._index, "scenario"],
-            "configuration": self._frame.loc[self._index, "configuration"],
-            "load_fraction": float(self._frame.loc[self._index, "load_fraction"]),
+            "scenario": self._rows[self._index]["scenario"],
+            "configuration": self._rows[self._index]["configuration"],
+            "load_fraction": float(self._rows[self._index]["load_fraction"]),
             "outlet_temperature": float(self._state["Outlet Avg Temp"]),
         }
         if prediction:
@@ -114,10 +115,11 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         if selected not in self.frames:
             raise ValueError(f"Unknown scenario: {selected}")
         self._frame = self.frames[selected]
+        self._rows=self.records[selected]
         self._index = int(self.np_random.choice(self.start_rows[selected]))
         self._steps = 0
         self._last_action = 1
-        row = self._frame.loc[self._index]
+        row = self._rows[self._index]
         self._state = {column: float(row[column]) for column in STATE_COLUMNS}
         return self._observation(), {**self._info(), "start_row": self._index}
 
@@ -127,7 +129,7 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         if not self.action_space.contains(action):
             raise ValueError(f"Invalid action: {action}")
 
-        current = self._frame.loc[self._index]
+        current = self._rows[self._index]
         unclipped_supply = self._state["Cooling Supply Average"] + self.action_deltas[action] * self.cooling_step
         proposed_supply = float(np.clip(unclipped_supply, *self.supply_bounds))
         features = {
@@ -138,7 +140,7 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         }
         prediction = self.transition_model.predict_one(features)
         next_index = min(self._index + 1, len(self._frame) - 1)
-        exogenous = self._frame.loc[next_index]
+        exogenous = self._rows[next_index]
         self._state = {
             "Inlet Temp Avg": float(exogenous["Inlet Temp Avg"]),
             "Outlet Avg Temp": float(prediction["Outlet Avg Temp"]),
