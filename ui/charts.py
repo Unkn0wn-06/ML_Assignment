@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -75,11 +74,11 @@ def scenario_heatmap(summary: pd.DataFrame, metric: str, held_out: set[str]) -> 
 
 
 def replay_chart(trajectory, outlet_limit, comparison=None):
-    figure = make_subplots(rows=2, cols=1, shared_xaxes=True, specs=[[{}], [{"secondary_y": True}]])
+    figure = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.10)
     for field, label, row, secondary, colour in [
         ("outlet_temperature", "Outlet", 1, False, "#fb7185"),
         ("proposed_supply", "Supply", 2, False, "#38bdf8"),
-        ("action", "Action", 2, True, "#f59e0b"),
+        ("action", "Action", 3, True, "#f59e0b"),
     ]:
         figure.add_scatter(
             x=trajectory.step,
@@ -92,13 +91,12 @@ def replay_chart(trajectory, outlet_limit, comparison=None):
             line_shape="hv" if secondary else "linear",
             row=row,
             col=1,
-            secondary_y=secondary,
         )
     if comparison is not None:
         for field, label, row, secondary in [
             ("outlet_temperature", "Outlet", 1, False),
             ("proposed_supply", "Supply", 2, False),
-            ("action", "Action", 2, True),
+            ("action", "Action", 3, True),
         ]:
             name = comparison.controller.iloc[0]
             figure.add_scatter(
@@ -110,11 +108,10 @@ def replay_chart(trajectory, outlet_limit, comparison=None):
                 line_shape="hv" if secondary else "linear",
                 row=row,
                 col=1,
-                secondary_y=secondary,
             )
     if "controller" in trajectory and (
-        "Rule-based" in trajectory.controller.values
-        or (comparison is not None and "Rule-based" in comparison.controller.values)
+        trajectory.controller.str.startswith("Rule-based").any()
+        or (comparison is not None and comparison.controller.str.startswith("Rule-based").any())
     ):
         for threshold in [min(24, outlet_limit - 3), outlet_limit - 1]:
             figure.add_hline(y=threshold, line_dash="dot", opacity=0.5, row=1, col=1)
@@ -122,10 +119,10 @@ def replay_chart(trajectory, outlet_limit, comparison=None):
         last = trajectory.iloc[-1]
         figure.update_xaxes(range=[0, last.horizon])
         note = "Reached horizon" if last.step == last.horizon else "Reached end of scenario data"
-        if last.violation > 0:
+        if last.get("terminated", False):
             note = f"Ended at step {last.step}: outlet {last.outlet_temperature:.2f} °C > limit {outlet_limit:.2f} °C"
         figure.add_vline(x=last.step, line_dash="dot", row=1, col=1)
-        figure.add_annotation(x=0.5, y=0.52, xref="paper", yref="paper", text=note, showarrow=False)
+        figure.add_annotation(x=0.5, y=0.68, xref="paper", yref="paper", text=note, showarrow=False)
     figure.add_hrect(
         y0=outlet_limit - 1,
         y1=outlet_limit,
@@ -137,17 +134,35 @@ def replay_chart(trajectory, outlet_limit, comparison=None):
     )
     figure.add_hline(y=outlet_limit, line_dash="dash", row=1, col=1)
     figure.update_yaxes(title="Outlet °C", row=1, col=1)
-    figure.update_yaxes(title="Supply °C", row=2, col=1, secondary_y=False)
+    figure.update_yaxes(title="Supply °C", row=2, col=1)
     figure.update_yaxes(
         tickvals=[0, 1, 2],
         ticktext=["Decrease", "Maintain", "Increase"],
         range=[-0.2, 2.2],
-        row=2,
+        row=3,
         col=1,
-        secondary_y=True,
     )
-    figure.update_xaxes(title="Step", row=2, col=1)
-    return dark_layout(figure, height=480)
+    figure.update_xaxes(title="Step", row=3, col=1)
+    for rows in [trajectory, comparison]:
+        if rows is None or "supply_clipped" not in rows:
+            continue
+        clipped = rows[rows.supply_clipped]
+        if len(clipped):
+            figure.add_scatter(
+                x=clipped.step,
+                y=clipped.proposed_supply,
+                mode="markers",
+                marker_symbol="x",
+                name=f"{rows.controller.iloc[0]} clipped",
+                row=2,
+                col=1,
+            )
+    for bound in ["supply_lower", "supply_upper"]:
+        if bound in trajectory:
+            figure.add_hline(
+                y=trajectory[bound].iloc[0], line_dash="dot", opacity=0.55, row=2, col=1
+            )
+    return dark_layout(figure, height=530)
 
 
 def learning_curve_chart(curves: pd.DataFrame) -> go.Figure:
@@ -214,9 +229,18 @@ def paired_savings(metrics):
     for controller in metrics.controller.unique():
         if controller == "Rule-based":
             continue
-        pairs = full.loc[full.controller == controller].merge(base, on=keys, suffixes=("", "_base"), validate="one_to_one")
+        pairs = full.loc[full.controller == controller].merge(
+            base, on=keys, suffixes=("", "_base"), validate="one_to_one"
+        )
         saved = (pairs.mean_p_dc_base - pairs.mean_p_dc).mean()
-        rows.append({"Controller": controller, "Pairs": len(pairs), "Saving (kW)": saved,
-                     "Saving (%)": 100 * saved / pairs.mean_p_dc_base.mean(),
-                     "Any violation difference (pp)": 100 * (pairs.any_violation.mean() - pairs.any_violation_base.mean())})
+        rows.append(
+            {
+                "Controller": controller,
+                "Pairs": len(pairs),
+                "Saving (kW)": saved,
+                "Saving (%)": 100 * saved / pairs.mean_p_dc_base.mean(),
+                "Any violation difference (pp)": 100
+                * (pairs.any_violation.mean() - pairs.any_violation_base.mean()),
+            }
+        )
     return pd.DataFrame(rows)

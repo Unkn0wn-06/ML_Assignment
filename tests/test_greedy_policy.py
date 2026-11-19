@@ -8,6 +8,8 @@ def test_greedy_eligibility_and_margin():
     agent = TabularAgent(Discretizer().fit(np.stack([obs, obs + 1])))
     state = agent.discretizer.transform(obs)
     assert agent.select_action(obs, False) == 1
+    agent.visits[state][:] = [9, 0, 0]
+    assert agent.select_action(obs, False) == 1 and agent.fallback
     agent.visits[state][:] = [10, 10, 0]
     agent.q_values[state][:] = [-2, -2.03, 0]
     assert agent.select_action(obs, False) == 1

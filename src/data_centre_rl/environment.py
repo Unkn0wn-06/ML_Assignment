@@ -62,8 +62,12 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         self.termination_excess = termination_excess
         self.legacy_termination = legacy_termination
         self.termination_penalty_per_step = (
-            np.ceil(self.reward_weights.energy * self.data.P_DC.max() + self.reward_weights.pue * self.data.PUE.max())
-            if termination_penalty_per_step is None else termination_penalty_per_step
+            np.ceil(
+                self.reward_weights.energy * self.data.P_DC.max()
+                + self.reward_weights.pue * self.data.PUE.max()
+            )
+            if termination_penalty_per_step is None
+            else termination_penalty_per_step
         )
         self.supply_bounds = supply_bounds or transition_model.observed_supply_bounds(self.data)
         available = sorted(self.data["scenario"].unique())
@@ -78,12 +82,14 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         if any(len(frame) < 2 for frame in self.frames.values()):
             raise ValueError("Every scenario needs at least two rows")
 
-        self.records={name: frame.to_dict("records") for name,frame in self.frames.items()}
+        self.records = {name: frame.to_dict("records") for name, frame in self.frames.items()}
         self.start_rows = {}
         for scenario, frame in self.frames.items():
             candidates = np.arange(len(frame) - 1)
             if safe_starts:
-                candidates = candidates[frame["Outlet Avg Temp"].to_numpy()[candidates] <= outlet_limit]
+                candidates = candidates[
+                    frame["Outlet Avg Temp"].to_numpy()[candidates] <= outlet_limit
+                ]
             full_length = candidates[candidates <= max(0, len(frame) - episode_horizon - 1)]
             self.start_rows[scenario] = full_length if len(full_length) else candidates
         self.infeasible = [name for name, rows in self.start_rows.items() if not len(rows)]
@@ -124,7 +130,7 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         if selected not in self.frames:
             raise ValueError(f"Unknown scenario: {selected}")
         self._frame = self.frames[selected]
-        self._rows=self.records[selected]
+        self._rows = self.records[selected]
         self._index = int(self.np_random.choice(self.start_rows[selected]))
         self._steps = 0
         self._last_action = 1
@@ -139,7 +145,9 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
             raise ValueError(f"Invalid action: {action}")
 
         current = self._rows[self._index]
-        unclipped_supply = self._state["Cooling Supply Average"] + self.action_deltas[action] * self.cooling_step
+        unclipped_supply = (
+            self._state["Cooling Supply Average"] + self.action_deltas[action] * self.cooling_step
+        )
         proposed_supply = float(np.clip(unclipped_supply, *self.supply_bounds))
         features = {
             **self._state,
@@ -164,7 +172,9 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         terminated = bool(violation > 0 if self.legacy_termination else serious)
         remaining = max(0, self.episode_horizon - self._steps - 1)
         components = {
-            "termination_penalty": self.termination_penalty_per_step * remaining if terminated and not self.legacy_termination else 0.0,
+            "termination_penalty": self.termination_penalty_per_step * remaining
+            if terminated and not self.legacy_termination
+            else 0.0,
             "energy_penalty": self.reward_weights.energy * p_dc,
             "pue_penalty": self.reward_weights.pue * pue,
             "temperature_penalty": self.reward_weights.temperature * violation**2,
@@ -177,11 +187,14 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         truncated = bool(self._steps >= self.episode_horizon or self._index >= len(self._frame) - 1)
         info = self._info(prediction)
         info.update(components)
-        info.update(terminated=terminated, terminated_serious=bool(terminated and serious),
-                    supply_lower=self.supply_bounds[0], supply_upper=self.supply_bounds[1])
+        info.update(
+            terminated=terminated,
+            terminated_serious=bool(terminated and serious),
+            supply_lower=self.supply_bounds[0],
+            supply_upper=self.supply_bounds[1],
+        )
         info["violation"] = violation
         info["proposed_supply"] = proposed_supply
         info["unclipped_supply"] = float(unclipped_supply)
         info["supply_clipped"] = bool(not np.isclose(unclipped_supply, proposed_supply))
         return self._observation(), float(reward), terminated, truncated, info
-

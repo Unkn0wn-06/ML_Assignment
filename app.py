@@ -96,6 +96,10 @@ def comparison_table(summary: pd.DataFrame) -> pd.DataFrame:
         violating_step_share=("violating_step_share", "mean"),
         reward=("return_per_step", "mean"),
     )
+    rates = summary.groupby(["controller", "seed"])[["violation_count", "steps"]].sum()
+    grouped["violating_step_share"] = grouped.controller.map(
+        (rates.violation_count / rates.steps).groupby(level=0).mean()
+    )
     return grouped
 
 
@@ -216,14 +220,20 @@ with st.sidebar:
     repetitions = st.slider("Episodes per scenario", 1, 10, 3)
     st.caption("TRAINING")
     with st.expander("Advanced tabular settings"):
-        release_band = st.number_input("Rule release band (°C)", 0., 2., .5)
+        release_band = st.number_input("Rule release band (°C)", 0.0, 2.0, 0.5)
         min_hold_steps = st.number_input("Minimum hold steps", 1, 100, 5)
-        legacy_state = st.selectbox("Tabular state", ["Safety state", "Legacy 5-bin state"]) == "Legacy 5-bin state"
-        training_options = dict(alpha=st.number_input("Alpha", .01, 1., .1), gamma=st.number_input("Gamma", 0., 1., .9),
-                                epsilon_start=st.number_input("Starting exploration", 0., 1., 1.),
-                                epsilon_end=st.number_input("Final exploration", 0., 1., .05),
-                                decay_fraction=st.number_input("Exploration decay fraction", .01, 1., .6),
-                                min_visits=st.number_input("Minimum trusted visits", 1, 1000, 10))
+        legacy_state = (
+            st.selectbox("Tabular state", ["Safety state", "Legacy 5-bin state"])
+            == "Legacy 5-bin state"
+        )
+        training_options = {
+            "alpha": st.number_input("Alpha", 0.01, 1.0, 0.1),
+            "gamma": st.number_input("Gamma", 0.0, 1.0, 0.9),
+            "epsilon_start": st.number_input("Starting exploration", 0.0, 1.0, 1.0),
+            "epsilon_end": st.number_input("Final exploration", 0.0, 1.0, 0.05),
+            "decay_fraction": st.number_input("Exploration decay fraction", 0.01, 1.0, 0.6),
+            "min_visits": st.number_input("Minimum trusted visits", 1, 1000, 10),
+        }
         legacy_termination = st.checkbox("Legacy termination")
         tie_margin = st.number_input(
             "Near-tie margin (reward units)", min_value=0.0, value=0.05, step=0.01
@@ -293,7 +303,11 @@ if run and data is not None:
                         repetitions,
                         tabular_episodes,
                         deep_timesteps,
-                        training_seed, release_band, min_hold_steps, legacy_state, tuple(training_options.items()),
+                        training_seed,
+                        release_band,
+                        min_hold_steps,
+                        legacy_state,
+                        tuple(training_options.items()),
                         legacy_termination,
                         tie_margin,
                         zero_initialisation,
@@ -311,8 +325,10 @@ if run and data is not None:
                                 tabular_episodes=tabular_episodes,
                                 deep_timesteps=deep_timesteps,
                                 seed=training_seed,
-                                release_band=release_band, min_hold_steps=min_hold_steps,
-                                legacy_state=legacy_state, training_options=training_options,
+                                release_band=release_band,
+                                min_hold_steps=min_hold_steps,
+                                legacy_state=legacy_state,
+                                training_options=training_options,
                                 legacy_termination=legacy_termination,
                                 tie_margin=tie_margin,
                                 zero_initialisation=zero_initialisation,
@@ -380,8 +396,9 @@ with overview_tab:
         )
         columns = st.columns(6)
         columns[5].metric(
-            f"Mean steps survived (of {int(selected.horizon.iloc[0])})",
+            "Steps survived",
             f"{selected.steps_survived.mean():.1f}",
+            help=f"Mean executed steps out of {int(selected.horizon.iloc[0])}.",
         )
         columns[0].metric(
             "Mean P_DC (kW)",
@@ -397,9 +414,10 @@ with overview_tab:
             delta(summary, controller, "mean_outlet_temperature"),
         )
         columns[3].metric(
-            "Episodes ending in violation",
+            "Episodes violated",
             f"{selected['episode_violation_rate'].mean():.1%}",
             delta(summary, controller, "episode_violation_rate"),
+            help="Share of episodes with any outlet temperature above the limit.",
         )
         columns[4].metric(
             "Safety status",
@@ -462,13 +480,54 @@ with overview_tab:
                 context.evaluation_data["scenario"] == scenario, "configuration"
             ].iloc[0]
             render_room(replay, configuration)
-        heat, episode_panel, trade = st.columns(3)
+        heat, trade = st.columns(2)
         with card(heat, "Scenario map", "Grey n/a cells have no evaluated steps."):
             metric = st.selectbox(
                 "Metric", ["episode_violation_rate", "mean_steps_survived", "mean_p_dc", "mean_pue"]
             )
             st.plotly_chart(scenario_heatmap(selected, metric, context.held_out_scenarios))
-        with card(episode_panel, "Episode replay", "Warning band starts 1 °C below the limit."):
+        with card(
+            trade,
+            "Controller trade-offs",
+            "Bars span one standard deviation across seeds. Marker size shows switching rate.",
+        ):
+            seeds = summary.groupby(["controller", "seed"])[
+                ["mean_p_dc", "episode_violation_rate", "switching_rate"]
+            ].mean()
+            points = seeds.groupby(level=0).mean()
+            spread = seeds.groupby(level=0).std().fillna(0)
+            zoom = st.checkbox("Zoom to controllers", value=True)
+            figure = go.Figure()
+            for i, (name, point) in enumerate(points.iterrows()):
+                figure.add_scatter(
+                    x=[point.mean_p_dc],
+                    y=[point.episode_violation_rate],
+                    mode="markers",
+                    name=name,
+                    marker={
+                        "size": 9 + 30 * point.switching_rate,
+                        "color": CONTROLLER_COLOURS[name],
+                    },
+                    error_x={"array": [spread.loc[name, "mean_p_dc"]]},
+                    error_y={"array": [spread.loc[name, "episode_violation_rate"]]},
+                )
+                figure.add_annotation(
+                    x=point.mean_p_dc,
+                    y=point.episode_violation_rate,
+                    text=name,
+                    ax=35 if i % 2 else -35,
+                    ay=(-1) ** i * (20 + 8 * i),
+                    arrowhead=0,
+                )
+            figure.update_xaxes(title="Mean power (kW)", rangemode="normal" if zoom else "tozero")
+            figure.update_yaxes(
+                title="Episodes with any violation",
+                tickformat=".0%",
+                rangemode="normal" if zoom else "tozero",
+            )
+            figure.update_layout(showlegend=False)
+            st.plotly_chart(dark_layout(figure))
+        with card(st, "Episode replay", "Warning band starts 1 °C below the limit."):
             outcome = selected.loc[
                 (selected.scenario == scenario)
                 & (selected.episode == episode)
@@ -490,30 +549,10 @@ with overview_tab:
                     & (traces.start_row == outcome.start_row)
                 ]
             st.plotly_chart(replay_chart(replay, st.session_state["outlet_limit"], comparison))
-        with card(
-            trade, "Controller trade-offs", "Marker size in the projection reflects switching rate."
-        ):
-            points = summary.groupby("controller", as_index=False).mean(numeric_only=True)
-            points["marker_size"] = points.switching_rate + 0.02
-            st.plotly_chart(
-                dark_layout(
-                    px.scatter(
-                        points,
-                        x="mean_p_dc",
-                        y="episode_violation_rate",
-                        size="marker_size",
-                        text="controller",
-                        color="controller",
-                        color_discrete_map=CONTROLLER_COLOURS,
-                        labels={
-                            "mean_p_dc": "Power (kW)",
-                            "episode_violation_rate": "Violation rate",
-                        },
-                    )
-                )
-            )
 
 with compare_tab:
+    if not summary.empty and (summary.legacy_termination.any() or summary.legacy_state.any()):
+        st.warning("Legacy setting: not comparable with the default results")
     if summary.empty:
         st.info("Run two or more controllers to compare physical metrics, actions, and reward.")
     else:
@@ -527,15 +566,15 @@ with compare_tab:
                 [
                     "controller",
                     "mean_p_dc",
+                    "episode_violation_rate",
+                    "violating_step_share",
+                    "mean_steps_survived",
+                    "reward",
+                    "switching_rate",
                     "mean_pue",
                     "mean_cop",
                     "max_outlet_temperature",
-                    "episode_violation_rate",
                     "max_violation",
-                    "mean_steps_survived",
-                    "switching_rate",
-                    "violating_step_share",
-                    "reward",
                 ]
             ]
 
@@ -588,7 +627,9 @@ with compare_tab:
             [result.learning_curve for result in results.values()], ignore_index=True
         )
         left, right = st.columns(2)
-        with card(left, "Learning curves", "Rolling reward over ten training observations."):
+        with card(
+            left, "Learning curves", "Reward per step, averaged over ten training observations."
+        ):
             if not curves.empty:
                 st.plotly_chart(learning_curve_chart(curves), width="stretch")
                 st.caption(
@@ -599,7 +640,11 @@ with compare_tab:
         with card(right, "Action distribution", "Share of evaluated steps for each controller."):
             st.plotly_chart(action_distribution_chart(trajectories), width="stretch")
         if "Rule-based" in results and len(results) > 1:
-            with card(st, "Paired power and safety", "Full-horizon episodes with matching starts. Differences below ~1% are not practically meaningful."):
+            with card(
+                st,
+                "Paired power and safety",
+                "Full-horizon episodes with matching starts. Differences below ~1% are not practically meaningful.",
+            ):
                 st.dataframe(paired_savings(summary), hide_index=True)
         st.download_button(
             "Download comparison table",
@@ -625,10 +670,15 @@ with diagnostics_tab:
         for name, result in results.items():
             if "states_visited" in result.scenario_metrics:
                 per_seed = result.scenario_metrics.groupby("seed").first()
-                tabular_rows.append({"Controller": name, "States visited (seed mean)": per_seed.states_visited.mean(),
-                                     "Median trusted visits (seed mean)": per_seed.median_trusted_visits.mean(),
-                                     "Fallback decisions (%)": 100 * result.trajectories.fallback.mean(),
-                                     "Switching (%)": 100 * result.scenario_metrics.switching_rate.mean()})
+                tabular_rows.append(
+                    {
+                        "Controller": name,
+                        "States visited (seed mean)": per_seed.states_visited.mean(),
+                        "Median trusted visits (seed mean)": per_seed.median_trusted_visits.mean(),
+                        "Fallback decisions (%)": 100 * result.trajectories.fallback.mean(),
+                        "Switching (%)": 100 * result.scenario_metrics.switching_rate.mean(),
+                    }
+                )
         if tabular_rows:
             st.subheader("Tabular policy diagnostics")
             st.dataframe(pd.DataFrame(tabular_rows), hide_index=True)
@@ -690,7 +740,17 @@ with diagnostics_tab:
                 st.caption(
                     "Flagged scenarios predict lower power when supply is lowered. This may be a spurious correlation."
                 )
-                st.dataframe(details.style.format(precision=4))
+                flags = details.loc[details.spurious]
+                for variant, flagged in flags.groupby("variant"):
+                    st.write(f"{variant}: {', '.join(flagged.scenario.unique())}")
+                if flags.empty:
+                    st.write("No scenarios flagged.")
+                st.dataframe(
+                    details.drop(columns="spurious").style.format(precision=4), hide_index=True
+                )
+                st.caption(
+                    "Single-state spikes from a random forest are steps in its predictions and should not be read as physical responses."
+                )
         sensitivity = action_sensitivity(context)
         with card(
             st,

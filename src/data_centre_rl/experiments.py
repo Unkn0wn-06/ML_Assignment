@@ -15,7 +15,15 @@ from .evaluation import EvaluationResult, evaluate_policy
 from .training import model_action, train_dqn, train_ppo, train_tabular
 from .transition_model import VARIANTS, TransitionModel
 
-CONTROLLERS = ("Fixed setpoint", "Rule-based", "Q-Learning", "SARSA", "DQN", "PPO", "Rule-based (no hysteresis)")
+CONTROLLERS = (
+    "Fixed setpoint",
+    "Rule-based",
+    "Q-Learning",
+    "SARSA",
+    "DQN",
+    "PPO",
+    "Rule-based (no hysteresis)",
+)
 
 
 @dataclass
@@ -140,7 +148,7 @@ def run_controller(
     deep_timesteps: int,
     seed: int,
     safe_starts: bool = True,
-    release_band: float = .5,
+    release_band: float = 0.5,
     min_hold_steps: int = 5,
     legacy_state: bool = False,
     training_options: dict | None = None,
@@ -155,9 +163,20 @@ def run_controller(
     if controller not in CONTROLLERS:
         raise ValueError(f"Unknown controller: {controller}")
     train_env = _environment(
-        context, outlet_limit=outlet_limit, horizon=horizon, training=True, safe_starts=safe_starts, legacy_termination=legacy_termination, termination_excess=termination_excess, termination_penalty_per_step=termination_penalty_per_step
+        context,
+        outlet_limit=outlet_limit,
+        horizon=horizon,
+        training=True,
+        safe_starts=safe_starts,
+        legacy_termination=legacy_termination,
+        termination_excess=termination_excess,
+        termination_penalty_per_step=termination_penalty_per_step,
     )
-    if not train_env.scenarios and controller not in {"Fixed setpoint", "Rule-based", "Rule-based (no hysteresis)"}:
+    if not train_env.scenarios and controller not in {
+        "Fixed setpoint",
+        "Rule-based",
+        "Rule-based (no hysteresis)",
+    }:
         raise ValueError(f"No feasible training scenarios at {outlet_limit:g} °C.")
     started = perf_counter()
     learning_curve = pd.DataFrame(columns=["step", "reward"])
@@ -170,7 +189,10 @@ def run_controller(
         action_fn = agent.predict
     elif controller == "Rule-based":
         agent = RuleBasedPolicy(
-            warning=outlet_limit - 1, lower=min(24, outlet_limit - 3), release_band=release_band, min_hold_steps=min_hold_steps
+            warning=outlet_limit - 1,
+            lower=min(24, outlet_limit - 3),
+            release_band=release_band,
+            min_hold_steps=min_hold_steps,
         )
         action_fn = agent.predict
     elif controller in {"Q-Learning", "SARSA"}:
@@ -180,7 +202,9 @@ def run_controller(
             context.training_data,
             algorithm=algorithm,
             episodes=tabular_episodes,
-            bins=5, legacy_state=legacy_state, **(training_options or {}),
+            bins=5,
+            legacy_state=legacy_state,
+            **(training_options or {}),
             tie_margin=tie_margin,
             zero_initialisation=zero_initialisation,
             seed=seed,
@@ -204,7 +228,10 @@ def run_controller(
             context,
             outlet_limit=outlet_limit,
             horizon=horizon,
-            training=False, legacy_termination=legacy_termination, termination_excess=termination_excess, termination_penalty_per_step=train_env.termination_penalty_per_step,
+            training=False,
+            legacy_termination=legacy_termination,
+            termination_excess=termination_excess,
+            termination_penalty_per_step=train_env.termination_penalty_per_step,
             safe_starts=safe_starts,
         ),
         action_fn,

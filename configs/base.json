@@ -16,6 +16,7 @@
     "switching": 0.05
   },
   "q_learning": {
+    "legacy_state": false,
     "episodes": 300,
     "min_visits": 10,
     "decay_fraction": 0.6,

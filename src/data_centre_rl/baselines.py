@@ -46,7 +46,7 @@ class ThresholdPolicy:
 class RuleBasedPolicy(ThresholdPolicy):
     """Stateful hysteresis with a minimum dwell time and emergency override."""
 
-    def __init__(self, lower=24., warning=28., release_band=.5, min_hold_steps=5):
+    def __init__(self, lower=24.0, warning=28.0, release_band=0.5, min_hold_steps=5):
         super().__init__(warning, lower)
         self.release_band = release_band
         self.min_hold_steps = min_hold_steps
@@ -59,16 +59,19 @@ class RuleBasedPolicy(ThresholdPolicy):
     def predict(self, observation):
         outlet = float(observation[1])
         previous = self.mode
-        if outlet >= self.warning_temperature + .75:
+        if outlet >= self.warning_temperature + 0.75:
             self.mode = 2
         elif self.held >= self.min_hold_steps:
             if outlet >= self.warning_temperature:
                 self.mode = 2
             elif outlet <= self.lower_temperature:
                 self.mode = 0
-            elif self.mode == 0 and outlet < self.lower_temperature + self.release_band:
-                pass
-            elif self.mode == 2 and outlet > self.warning_temperature - self.release_band:
+            elif (
+                self.mode == 0
+                and outlet < self.lower_temperature + self.release_band
+                or self.mode == 2
+                and outlet > self.warning_temperature - self.release_band
+            ):
                 pass
             else:
                 self.mode = 1
@@ -77,6 +80,10 @@ class RuleBasedPolicy(ThresholdPolicy):
 
     def explain(self, observation):
         mode = ("Decrease", "Maintain", "Increase")[self.mode]
-        release = (self.lower_temperature + self.release_band, None, self.warning_temperature - self.release_band)[self.mode]
+        release = (
+            self.lower_temperature + self.release_band,
+            None,
+            self.warning_temperature - self.release_band,
+        )[self.mode]
         detail = "" if release is None else f", release at {release:g} °C"
         return f"{mode} mode{detail}, held {self.held}/{self.min_hold_steps} steps"

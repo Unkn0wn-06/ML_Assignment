@@ -37,9 +37,12 @@ class SafetyStateEncoder:
         change = 0.0 if previous is None else float(observation[1]) - float(previous[1])
         low, high = self.supply_bounds
         fraction = (float(observation[2]) - low) / max(high - low, 1e-8)
-        return (int(np.searchsorted([0, .5, 1, 2, 4], margin)),
-                0 if change < -.1 else 2 if change > .1 else 1,
-                0 if fraction < 1/3 else 2 if fraction >= 2/3 else 1, last_action)
+        return (
+            int(np.searchsorted([0, 0.5, 1, 2, 4], margin)),
+            0 if change < -0.1 else 2 if change > 0.1 else 1,
+            0 if fraction < 1 / 3 else 2 if fraction >= 2 / 3 else 1,
+            last_action,
+        )
 
 
 class TabularAgent:
@@ -94,7 +97,9 @@ class TabularAgent:
             counts = self.visits.get(state, np.zeros(3, dtype=int))
             eligible = np.flatnonzero(counts >= self.min_visits)
             self.fallback = not len(eligible)
-            trust = ", ".join(f"{n} {'trusted' if n >= self.min_visits else 'not trusted'}" for n in counts)
+            trust = ", ".join(
+                f"{n} {'trusted' if n >= self.min_visits else 'not trusted'}" for n in counts
+            )
             if self.fallback:
                 self.last_decision = f"Visits: {trust} → maintain (fallback)"
                 return 1
@@ -102,7 +107,7 @@ class TabularAgent:
             ordered = eligible[np.argsort(-values[eligible], kind="stable")]
             best = int(ordered[0])
             gap = values[best] - values[ordered[1]] if len(ordered) > 1 else None
-            threshold = max(self.tie_margin, .02 * abs(values[best]))
+            threshold = max(self.tie_margin, 0.02 * abs(values[best]))
             near = gap is not None and gap <= threshold
             if counts[1] >= self.min_visits and values[best] - values[1] <= threshold:
                 best = 1
