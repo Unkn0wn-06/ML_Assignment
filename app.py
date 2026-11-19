@@ -210,6 +210,9 @@ with st.sidebar:
     horizon = st.slider("Episode horizon", 5, 200, 30, 5)
     repetitions = st.slider("Episodes per scenario", 1, 10, 1)
     st.caption("TRAINING")
+    with st.expander("Advanced tabular settings"):
+        tie_margin=st.number_input("Near-tie margin (reward units)",min_value=0.,value=.05,step=.01)
+        zero_initialisation=st.checkbox("Legacy zero initial Q-values")
     tabular_episodes = st.slider("Tabular RL episodes", 25, 1_000, 25, 25)
     deep_timesteps = st.slider("Deep RL timesteps", 1_000, 100_000, 20_000, 1_000)
     trees = st.slider("Transition-model trees", 20, 200, 50, 10)
@@ -272,7 +275,7 @@ if run and data is not None:
                         repetitions,
                         tabular_episodes,
                         deep_timesteps,
-                        training_seed,
+                        training_seed,tie_margin,zero_initialisation,
                         safe,
                     )
                     if key not in cache:
@@ -287,6 +290,7 @@ if run and data is not None:
                                 tabular_episodes=tabular_episodes,
                                 deep_timesteps=deep_timesteps,
                                 seed=training_seed,
+                                tie_margin=tie_margin,zero_initialisation=zero_initialisation,
                                 progress_callback=report,
                                 safe_starts=safe,
                             ),

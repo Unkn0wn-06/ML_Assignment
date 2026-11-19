@@ -28,12 +28,17 @@ def train_tabular(
     bins: int,
     seed: int,
     progress_callback: ProgressCallback | None = None,
+    tie_margin: float = .05,
+    zero_initialisation: bool = False,
     learning_callback: ProgressCallback | None = None,
 ) -> TabularAgent:
     """Train Q-Learning or SARSA with linearly decayed epsilon exploration."""
     if algorithm not in {"q_learning", "sarsa"}:
         raise ValueError("algorithm must be 'q_learning' or 'sarsa'")
-    agent = TabularAgent(fit_discretizer(training_data, bins), seed=seed)
+    weights=env.reward_weights
+    penalties=weights.energy*training_data.P_DC.clip(lower=0)+weights.pue*training_data.PUE.clip(lower=0)+weights.temperature*(training_data["Outlet Avg Temp"]-env.outlet_limit).clip(lower=0)**2
+    initial=0. if zero_initialisation else -float(penalties.mean())
+    agent = TabularAgent(fit_discretizer(training_data, bins), seed=seed,tie_margin=tie_margin,initial_value=initial)
     learning_records: list[dict[str, float | int]] = []
     for episode in range(episodes):
         agent.epsilon = max(0.05, 1.0 - episode / max(1, episodes - 1) * 0.95)

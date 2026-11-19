@@ -129,6 +129,8 @@ def run_controller(
     deep_timesteps: int,
     seed: int,
     safe_starts: bool = True,
+    tie_margin: float = .05,
+    zero_initialisation: bool = False,
     progress_callback: Callable[[int, int, float], None] | None = None,
 ) -> ControllerResult:
     """Train (where needed) and evaluate one controller under a prepared split."""
@@ -154,6 +156,8 @@ def run_controller(
             algorithm=algorithm,
             episodes=tabular_episodes,
             bins=5,
+            tie_margin=tie_margin,
+            zero_initialisation=zero_initialisation,
             seed=seed,
             progress_callback=progress_callback,
         )
