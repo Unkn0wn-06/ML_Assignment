@@ -27,13 +27,18 @@ def apply_control_room_theme(st) -> None:
         .safety-red { background: #7f1d1d; color: #fecaca; }
         div[data-testid="stMetric"] { background: #121a30; border: 1px solid #24304f; border-radius: 0.5rem; padding: 0.8rem; }
         [class*="st-key-panel_"], [data-testid="stVerticalBlockBorderWrapper"], [data-testid="stLayoutWrapper"]:has(> [data-testid="stVerticalBlock"][data-border="true"]) {background:#121a30;border-color:#24304f;border-radius:12px;}
+        [data-testid="stHorizontalBlock"]:has([class*="st-key-panel_"]) {align-items:stretch;}
+        [data-testid="stColumn"] > [data-testid="stVerticalBlock"]:has([class*="st-key-panel_"]), [data-testid="stColumn"] [class*="st-key-panel_"] {height:100%;}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
+
 def card(st, title, caption):
-    panel = st.container(border=True, key="panel_"+title.lower().replace(" ","_"))
+    panel = st.container(
+        border=True, height="stretch", key="panel_" + title.lower().replace(" ", "_")
+    )
     panel.markdown(f"**{title}**")
     panel.caption(caption)
     return panel

@@ -66,6 +66,16 @@ For generalisation results, hold out the 100% loads or one configuration. In **A
 
 [Overview](docs/ui/overview-2800.png) · [Controller comparison](docs/ui/compare-controllers-2800.png) · [Model diagnostics](docs/ui/model-diagnostics-2800.png) · [Source data](docs/ui/source-data-2800.png). Each view also has a 1600 × 1000 capture in the same folder. To repeat the captures on Windows with Edge installed, install Playwright and run `python scripts/capture_dashboard.py` from the project folder.
 
+### Episode and simulator comparison
+
+The headline violation rate counts **episodes ending at their first violation divided by evaluated episodes**. Steps survived counts executed transitions including the terminal one. Survival fraction divides that count by the requested horizon. The descriptive violating-step share uses a different denominator (executed steps). Replays distinguish violation, horizon and source-data exhaustion, and retain the pre-action decision reason and matched starting row.
+
+The level forest is the default reference. The delta forest learns next-minus-current outlet and return temperatures and converts them back to levels. Monotone boosting constrains those two predictions to be non-decreasing with supply temperature, an explicit physical assumption. All three leave power and efficiency unconstrained. Select a variant in the sidebar and inspect held-out error, sensitivity and power-sign flags in Diagnostics.
+
+Tabular training defaults to a constant initial Q equal to the negative average training-row energy, PUE and thermal penalties with zero switching penalty. Advanced settings expose legacy zero initialisation. Greedy evaluation considers visited actions only. An unseen state chooses maintain. When eligible values are tied or within the default 0.05 reward-unit margin, maintain takes precedence if eligible and within that margin. These rules affect evaluation independently of initialisation.
+
+The benchmark uses 250 training episodes per tabular policy and seeds 42–44. Reproduce the [held-out comparison](docs/ui/REPORT.md) with `python scripts/verify_variants.py`.
+
 ## Safety and scientific limits
 
 The AAU CSVs contain observations, not explicit cooling-control actions. The environment is therefore a learned counterfactual approximation. Interpret its policies as experimental recommendations only. Keep cooling setpoint and outlet-temperature constraints enabled, report violations separately from reward, and validate every result on held-out configuration/load scenarios.

@@ -24,7 +24,6 @@ from data_centre_rl.experiments import (
 from data_centre_rl.transition_model import VARIANTS
 from ui.charts import (
     action_distribution_chart,
-    controller_scatter,
     dark_layout,
     learning_curve_chart,
     paired_savings_chart,
@@ -87,13 +86,12 @@ def safety_status(maximum: float, limit: float) -> tuple[str, str]:
 def comparison_table(summary: pd.DataFrame) -> pd.DataFrame:
     grouped = summary.groupby("controller", as_index=False).agg(
         mean_p_dc=("mean_p_dc", "mean"),
-        
         mean_pue=("mean_pue", "mean"),
         mean_cop=("mean_cop", "mean"),
         max_outlet_temperature=("max_outlet_temperature", "max"),
         episode_violation_rate=("episode_violation_rate", "mean"),
         max_violation=("max_violation", "max"),
-        mean_steps_survived=("steps_survived","mean"),
+        mean_steps_survived=("steps_survived", "mean"),
         switching_rate=("switching_rate", "mean"),
         reward=("total_reward", "mean"),
     )
@@ -101,9 +99,11 @@ def comparison_table(summary: pd.DataFrame) -> pd.DataFrame:
 
 
 def pue_surface(context: ExperimentContext, configuration: str, outlet: float) -> go.Figure:
-    local_supply=context.training_data.loc[context.training_data.configuration==configuration,"Cooling Supply Average"]
-    supply_low=max(local_supply.min(),context.supply_bounds[0])
-    supply_high=min(local_supply.max(),context.supply_bounds[1])
+    local_supply = context.training_data.loc[
+        context.training_data.configuration == configuration, "Cooling Supply Average"
+    ]
+    supply_low = max(local_supply.min(), context.supply_bounds[0])
+    supply_high = min(local_supply.max(), context.supply_bounds[1])
     loads = sorted(context.training_data["load_fraction"].unique())
     supply = [supply_low + index * (supply_high - supply_low) / 20 for index in range(21)]
     state = (
@@ -204,20 +204,26 @@ with st.sidebar:
         ],
     )
     st.caption("SIMULATION")
-    variant=st.selectbox("Simulator variant",VARIANTS,help="Levels predicts absolute outcomes. Deltas learns temperature changes. Monotone boosting assumes warmer supply cannot lower predicted outlet or return temperature.")
+    variant = st.selectbox(
+        "Simulator variant",
+        VARIANTS,
+        help="Levels predicts absolute outcomes. Deltas learns temperature changes. Monotone boosting assumes warmer supply cannot lower predicted outlet or return temperature.",
+    )
     safe = st.checkbox("Start at or below the limit", True)
     outlet_limit = st.slider("Outlet limit (°C)", 24.0, 32.0, 29.0, 0.25)
-    horizon = st.slider("Episode horizon", 5, 200, 30, 5)
-    repetitions = st.slider("Episodes per scenario", 1, 10, 1)
+    horizon = st.slider("Episode horizon", 5, 200, 50, 5)
+    repetitions = st.slider("Episodes per scenario", 1, 10, 3)
     st.caption("TRAINING")
     with st.expander("Advanced tabular settings"):
-        tie_margin=st.number_input("Near-tie margin (reward units)",min_value=0.,value=.05,step=.01)
-        zero_initialisation=st.checkbox("Legacy zero initial Q-values")
-    tabular_episodes = st.slider("Tabular RL episodes", 25, 1_000, 25, 25)
+        tie_margin = st.number_input(
+            "Near-tie margin (reward units)", min_value=0.0, value=0.05, step=0.01
+        )
+        zero_initialisation = st.checkbox("Legacy zero initial Q-values")
+    tabular_episodes = st.slider("Tabular RL episodes", 25, 1_000, 250, 25)
     deep_timesteps = st.slider("Deep RL timesteps", 1_000, 100_000, 20_000, 1_000)
     trees = st.slider("Transition-model trees", 20, 200, 50, 10)
     seed = st.number_input("Random seed", min_value=0, value=42, step=1)
-    seed_count = st.number_input("Consecutive training seeds", 1, 10, 1)
+    seed_count = st.number_input("Consecutive training seeds", 1, 10, 3)
     run = st.button("Run experiment", type="primary", width="stretch", disabled=not controllers)
 
     if st.button("Clear results"):
@@ -240,7 +246,9 @@ if run and data is not None:
     started = monotonic()
     try:
         with st.spinner("Running the learned simulator..."):
-            context = cached_context(data, split_name=split_name,variant=variant, trees=trees, seed=int(seed))
+            context = cached_context(
+                data, split_name=split_name, variant=variant, trees=trees, seed=int(seed)
+            )
             results: dict[str, ControllerResult] = {}
             cache = st.session_state.setdefault("run_cache", {})
             for index, controller in enumerate(controllers):
@@ -275,7 +283,9 @@ if run and data is not None:
                         repetitions,
                         tabular_episodes,
                         deep_timesteps,
-                        training_seed,tie_margin,zero_initialisation,
+                        training_seed,
+                        tie_margin,
+                        zero_initialisation,
                         safe,
                     )
                     if key not in cache:
@@ -290,7 +300,8 @@ if run and data is not None:
                                 tabular_episodes=tabular_episodes,
                                 deep_timesteps=deep_timesteps,
                                 seed=training_seed,
-                                tie_margin=tie_margin,zero_initialisation=zero_initialisation,
+                                tie_margin=tie_margin,
+                                zero_initialisation=zero_initialisation,
                                 progress_callback=report,
                                 safe_starts=safe,
                             ),
@@ -354,7 +365,10 @@ with overview_tab:
             selected["max_outlet_temperature"].max(), st.session_state["outlet_limit"]
         )
         columns = st.columns(6)
-        columns[5].metric(f"Mean steps survived (of {int(selected.horizon.iloc[0])})",f"{selected.steps_survived.mean():.1f}")
+        columns[5].metric(
+            f"Mean steps survived (of {int(selected.horizon.iloc[0])})",
+            f"{selected.steps_survived.mean():.1f}",
+        )
         columns[0].metric(
             "Mean P_DC (kW)",
             f"{selected['mean_p_dc'].mean():.3f}",
@@ -384,15 +398,33 @@ with overview_tab:
             else trajectory.seed.iloc[0]
         )
         trajectory = trajectory.loc[trajectory.seed == replay_seed]
-        groups=trajectory.groupby(["scenario","episode"],sort=False)
-        interesting=[key for key, rows in groups if rows.action.nunique()>1 or rows.step.max()<rows.horizon.iloc[0]]
-        default_scenario,default_episode=interesting[0] if interesting else next(iter(groups.groups))
-        stress=context.evaluation_data.assign(hot=lambda rows: rows["Outlet Avg Temp"]>st.session_state["outlet_limit"]-1).groupby("scenario").hot.mean()
-        scenarios=sorted(trajectory.scenario.unique())
-        scenario=selectors[1].selectbox("Replay scenario",scenarios,index=scenarios.index(default_scenario),format_func=lambda name: f"{name} · {'stressed' if stress[name]>.1 else 'calm'}")
+        groups = trajectory.groupby(["scenario", "episode"], sort=False)
+        interesting = [
+            key
+            for key, rows in groups
+            if rows.action.nunique() > 1 or rows.step.max() < rows.horizon.iloc[0]
+        ]
+        default_scenario, default_episode = (
+            interesting[0] if interesting else next(iter(groups.groups))
+        )
+        stress = (
+            context.evaluation_data.assign(
+                hot=lambda rows: rows["Outlet Avg Temp"] > st.session_state["outlet_limit"] - 1
+            )
+            .groupby("scenario")
+            .hot.mean()
+        )
+        scenarios = sorted(trajectory.scenario.unique())
+        scenario = selectors[1].selectbox(
+            "Replay scenario",
+            scenarios,
+            index=scenarios.index(default_scenario),
+            format_func=lambda name: f"{name} · {'stressed' if stress[name] > 0.1 else 'calm'}",
+        )
         episode = selectors[2].selectbox(
             "Replay episode",
-            sorted(trajectory.loc[trajectory["scenario"] == scenario, "episode"].unique()),index=int(default_episode) if scenario==default_scenario else 0,
+            sorted(trajectory.loc[trajectory["scenario"] == scenario, "episode"].unique()),
+            index=int(default_episode) if scenario == default_scenario else 0,
         )
         replay = trajectory.loc[
             (trajectory["scenario"] == scenario) & (trajectory["episode"] == episode)
@@ -418,21 +450,35 @@ with overview_tab:
             render_room(replay, configuration)
         heat, episode_panel, trade = st.columns(3)
         with card(heat, "Scenario map", "Grey n/a cells have no evaluated steps."):
-            metric = st.selectbox("Metric", ["episode_violation_rate","mean_steps_survived", "mean_p_dc", "mean_pue"])
+            metric = st.selectbox(
+                "Metric", ["episode_violation_rate", "mean_steps_survived", "mean_p_dc", "mean_pue"]
+            )
             st.plotly_chart(scenario_heatmap(selected, metric, context.held_out_scenarios))
         with card(episode_panel, "Episode replay", "Warning band starts 1 °C below the limit."):
-            outcome=selected.loc[(selected.scenario==scenario)&(selected.episode==episode)&(selected.seed==replay_seed)].iloc[0]
-            st.caption(f"{scenario} · {controller} · start row {outcome.start_row} · {outcome.steps_survived}/{outcome.horizon} steps · {outcome.end_reason} · {int(replay.action.diff().dropna().ne(0).sum())} switches · {int(replay.supply_clipped.sum())} clipped")
-            other=st.selectbox("Compare with",["None",*[name for name in results if name!=controller]])
-            comparison=None
-            if other!="None":
-                traces=results[other].trajectories
-                comparison=traces.loc[(traces.scenario==scenario)&(traces.episode==episode)&(traces.seed==replay_seed)&(traces.start_row==outcome.start_row)]
-            st.plotly_chart(replay_chart(replay, st.session_state["outlet_limit"],comparison))
+            outcome = selected.loc[
+                (selected.scenario == scenario)
+                & (selected.episode == episode)
+                & (selected.seed == replay_seed)
+            ].iloc[0]
+            st.caption(
+                f"{scenario} · {controller} · start row {outcome.start_row} · {outcome.steps_survived}/{outcome.horizon} steps · {outcome.end_reason} · {int(replay.action.diff().dropna().ne(0).sum())} switches · {int(replay.supply_clipped.sum())} clipped"
+            )
+            other = st.selectbox(
+                "Compare with", ["None", *[name for name in results if name != controller]]
+            )
+            comparison = None
+            if other != "None":
+                traces = results[other].trajectories
+                comparison = traces.loc[
+                    (traces.scenario == scenario)
+                    & (traces.episode == episode)
+                    & (traces.seed == replay_seed)
+                    & (traces.start_row == outcome.start_row)
+                ]
+            st.plotly_chart(replay_chart(replay, st.session_state["outlet_limit"], comparison))
         with card(
             trade, "Controller trade-offs", "Marker size in the projection reflects switching rate."
         ):
-            st.plotly_chart(controller_scatter(summary))
             points = summary.groupby("controller", as_index=False).mean(numeric_only=True)
             points["marker_size"] = points.switching_rate + 0.02
             st.plotly_chart(
@@ -442,9 +488,13 @@ with overview_tab:
                         x="mean_p_dc",
                         y="episode_violation_rate",
                         size="marker_size",
+                        text="controller",
                         color="controller",
                         color_discrete_map=CONTROLLER_COLOURS,
-                        labels={"mean_p_dc": "Power (kW)", "episode_violation_rate": "Violation rate"},
+                        labels={
+                            "mean_p_dc": "Power (kW)",
+                            "episode_violation_rate": "Violation rate",
+                        },
                     )
                 )
             )
@@ -478,6 +528,7 @@ with compare_tab:
                 visible.style.format(
                     {
                         "mean_p_dc": "{:.3f}",
+                        "mean_steps_survived": "{:.1f}",
                         "mean_pue": "{:.2f}",
                         "mean_cop": "{:.2f}",
                         "max_outlet_temperature": "{:.1f}",
@@ -506,7 +557,8 @@ with compare_tab:
                     "max_outlet_temperature": "Peak outlet (°C)",
                     "max_violation": "Peak excess (°C)",
                     "switching_rate": "Switching",
-                    "mean_steps_survived":"Mean steps survived","episode_violation_rate": "Episodes violated",
+                    "mean_steps_survived": "Mean steps survived",
+                    "episode_violation_rate": "Episodes violated",
                     "reward": "Return",
                 },
                 hide_index=True,
@@ -523,7 +575,7 @@ with compare_tab:
             if not curves.empty:
                 st.plotly_chart(learning_curve_chart(curves), width="stretch")
                 st.caption(
-                    "Single seed · faint raw rewards and 10-point rolling mean."
+                    "Only one seed: uncertainty across seeds is unavailable."
                     if curves.seed.nunique() == 1
                     else "Shaded band spans ±1 standard deviation across seeds."
                 )
@@ -532,6 +584,9 @@ with compare_tab:
         if summary.episode.max() < 1:
             st.info("Raise Episodes per scenario to at least 2 for paired savings intervals.")
         elif "Rule-based" in results and len(results) > 1:
+            st.caption(
+                f"{len(summary.loc[summary.controller == 'Rule-based'])} matched (scenario, seed, episode) pairs per comparison."
+            )
             card(
                 st,
                 "Paired energy saving",
@@ -561,27 +616,60 @@ with diagnostics_tab:
             st.info(
                 "All scenarios uses the same rows for fitting and evaluation. Both MAE bars are identical by design."
             )
-        with card(st,"Simulator comparison","Validation uses the selected hold-out, or the 100% load hold-out for an all-scenarios run."):
-            split=context.split_name if context.held_out_scenarios else "Load generalisation: hold out 100%"
-            diagnostics=[]
-            responses=[]
+        with card(
+            st,
+            "Simulator comparison",
+            "Validation uses the selected hold-out, or the 100% load hold-out for an all-scenarios run.",
+        ):
+            split = (
+                context.split_name
+                if context.held_out_scenarios
+                else "Load generalisation: hold out 100%"
+            )
+            diagnostics = []
+            responses = []
             for choice in VARIANTS:
-                if split.startswith("Load") and data.load_fraction.nunique()<2:
+                if split.startswith("Load") and data.load_fraction.nunique() < 2:
                     st.info("Load comparison requires training and held-out loads.")
                     break
-                candidate=cached_context(data,split_name=split,variant=choice,trees=context.model.n_estimators,seed=context.model.random_state)
-                effects=action_sensitivity(candidate)
-                responses.append(effects.assign(variant=choice,spurious=(effects.applied<0)&(effects.P_DC<0)))
-                diagnostics.append({"variant":choice,**candidate.diagnostics.held_out_mae,"Mean |Δ outlet|":effects["Outlet Avg Temp"].abs().mean(),"Mean |Δ kW|":effects.P_DC.abs().mean()})
+                candidate = cached_context(
+                    data,
+                    split_name=split,
+                    variant=choice,
+                    trees=context.model.n_estimators,
+                    seed=context.model.random_state,
+                )
+                effects = action_sensitivity(candidate)
+                responses.append(
+                    effects.assign(
+                        variant=choice, spurious=(effects.applied < 0) & (effects.P_DC < 0)
+                    )
+                )
+                diagnostics.append(
+                    {
+                        "variant": choice,
+                        **candidate.diagnostics.held_out_mae,
+                        "Mean |Δ outlet|": effects["Outlet Avg Temp"].abs().mean(),
+                        "Mean |Δ kW|": effects.P_DC.abs().mean(),
+                    }
+                )
             if diagnostics:
-                scores=pd.DataFrame(diagnostics).set_index("variant")
+                scores = pd.DataFrame(diagnostics).set_index("variant")
                 st.dataframe(scores.style.format("{:.4f}"))
                 for choice in VARIANTS[1:]:
-                    worse=[target for target in context.diagnostics.in_sample_mae if scores.loc[choice,target]>1.10*scores.iloc[0][target]]
+                    worse = [
+                        target
+                        for target in context.diagnostics.in_sample_mae
+                        if scores.loc[choice, target] > 1.10 * scores.iloc[0][target]
+                    ]
                     if worse:
-                        st.caption(f"{choice}: held-out MAE exceeds the levels model by >10% for {', '.join(worse)}.")
-                details=pd.concat(responses,ignore_index=True)
-                st.caption("Flagged scenarios predict lower power when supply is lowered. This may be a spurious correlation.")
+                        st.caption(
+                            f"{choice}: held-out MAE exceeds the levels model by >10% for {', '.join(worse)}."
+                        )
+                details = pd.concat(responses, ignore_index=True)
+                st.caption(
+                    "Flagged scenarios predict lower power when supply is lowered. This may be a spurious correlation."
+                )
                 st.dataframe(details.style.format(precision=4))
         sensitivity = action_sensitivity(context)
         with card(

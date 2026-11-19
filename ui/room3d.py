@@ -21,8 +21,7 @@ def render_room(trajectory: pd.DataFrame, configuration: str) -> None:
           <div style="display:flex;gap:12px;align-items:center;margin:8px 0">
             <button id="play">Play</button><input id="step" type="range" min="0" value="0" style="flex:1" />
             <select id="speed" aria-label="Playback speed"><option value="600">1×</option><option value="300">2×</option><option value="1200">½×</option></select><span id="label"></span>
-          </div><small>24 °C 🟢 · 27.5 °C 🟡 · 31 °C 🔴 | Cosmetic rack variation</small><div id="room"></div>
-          <small id="decision"></small>
+          </div><small>24 °C 🔵 · 27.5 °C 🟢 · 31 °C 🔴 | Cosmetic rack variation</small><div id="decision" aria-live="polite"></div><div id="room"></div>
         </div>
         <script>{(Path(__file__).parent / "static/three.min.js").read_text(encoding="utf-8")}</script>
         <script>
@@ -47,7 +46,7 @@ def render_room(trajectory: pd.DataFrame, configuration: str) -> None:
           const plume = new THREE.Mesh(new THREE.ConeGeometry(.17,.9,10), new THREE.MeshBasicMaterial({{color:0x38bdf8,transparent:true,opacity:.42}})); plume.position.set(rack.position.x,2.65,rack.position.z); scene.add(plume); rack.userData.plume=plume;
         }}
         function update() {{ const current=data[Number(slider.value)] || {{step:0,outlet_temperature:0}}; const t=current.outlet_temperature; const ratio=Math.max(0,Math.min(1,(t-24)/7));
-          racks.forEach((rack,index)=>{{ const shifted=Math.max(0,Math.min(1,ratio+((index%5)-2)*.025)); const color=new THREE.Color().setHSL((1-shifted)*.34,.86,.46); rack.material.color=color; rack.material.emissive=color.clone().multiplyScalar(.16); rack.userData.plume.material.color=color; }});
+          racks.forEach((rack,index)=>{{ const shifted=Math.max(0,Math.min(1,ratio+((index%5)-2)*.025)); const color=new THREE.Color().setHSL((1-shifted)*.62,.86,.46); rack.material.color=color; rack.material.emissive=color.clone().multiplyScalar(.16); rack.userData.plume.material.color=color; }});
           document.getElementById('decision').textContent=current.decision_reason;
           label.textContent=`step ${{current.step}} · outlet ${{t.toFixed(1)}} °C · supply ${{current.proposed_supply.toFixed(1)}} °C · ${{["Decrease","Maintain","Increase"][current.action]}}`; renderer.render(scene,camera); }}
         new ResizeObserver(()=>{{renderer.setSize(root.clientWidth,420);camera.aspect=root.clientWidth/420;camera.updateProjectionMatrix();update()}}).observe(root);
@@ -56,5 +55,5 @@ def render_room(trajectory: pd.DataFrame, configuration: str) -> None:
         }} catch(error) {{root.textContent='3D view unavailable in this browser. Read outlet, supply and action in the episode replay.'}}
         </script>
         """,
-        height=550,
+        height=600,
     )

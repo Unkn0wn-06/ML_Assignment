@@ -47,7 +47,11 @@ def scenario_heatmap(summary: pd.DataFrame, metric: str, held_out: set[str]) -> 
             y=list(range(4)),
             colorscale=[[0, "#26334b"], [0.01, "#156078"], [0.4, "#32a7a9"], [1, "#dfc45a"]],
             showscale=False,
-            customdata=summary.pivot_table(index="configuration",columns="load_percent",values="mean_steps_survived").reindex(index=configs,columns=loads) if "mean_steps_survived" in summary else None,
+            customdata=summary.pivot_table(
+                index="configuration", columns="load_percent", values="mean_steps_survived"
+            ).reindex(index=configs, columns=loads)
+            if "mean_steps_survived" in summary
+            else None,
             hovertemplate="Value %{z:.3g}<br>Mean steps survived %{customdata:.1f}<extra></extra>",
         )
     )
@@ -82,27 +86,46 @@ def replay_chart(trajectory, outlet_limit, comparison=None):
             y=trajectory[field],
             name=label,
             mode="lines+markers",
-            line_color=CONTROLLER_COLOURS.get(trajectory.controller.iloc[0],colour) if "controller" in trajectory else colour,
+            line_color=CONTROLLER_COLOURS.get(trajectory.controller.iloc[0], colour)
+            if "controller" in trajectory
+            else colour,
             line_shape="hv" if secondary else "linear",
             row=row,
             col=1,
             secondary_y=secondary,
         )
     if comparison is not None:
-        for field,label,row,secondary in [("outlet_temperature","Outlet",1,False),("proposed_supply","Supply",2,False),("action","Action",2,True)]:
-            name=comparison.controller.iloc[0]
-            figure.add_scatter(x=comparison.step,y=comparison[field],name=f"{name} {label}",line_color=CONTROLLER_COLOURS[name],line_dash="dot",line_shape="hv" if secondary else "linear",row=row,col=1,secondary_y=secondary)
-    if "controller" in trajectory and ("Rule-based" in trajectory.controller.values or (comparison is not None and "Rule-based" in comparison.controller.values)):
-        for threshold in [min(24,outlet_limit-3),outlet_limit-1]:
-            figure.add_hline(y=threshold,line_dash="dot",opacity=.5,row=1,col=1)
+        for field, label, row, secondary in [
+            ("outlet_temperature", "Outlet", 1, False),
+            ("proposed_supply", "Supply", 2, False),
+            ("action", "Action", 2, True),
+        ]:
+            name = comparison.controller.iloc[0]
+            figure.add_scatter(
+                x=comparison.step,
+                y=comparison[field],
+                name=f"{name} {label}",
+                line_color=CONTROLLER_COLOURS[name],
+                line_dash="dot",
+                line_shape="hv" if secondary else "linear",
+                row=row,
+                col=1,
+                secondary_y=secondary,
+            )
+    if "controller" in trajectory and (
+        "Rule-based" in trajectory.controller.values
+        or (comparison is not None and "Rule-based" in comparison.controller.values)
+    ):
+        for threshold in [min(24, outlet_limit - 3), outlet_limit - 1]:
+            figure.add_hline(y=threshold, line_dash="dot", opacity=0.5, row=1, col=1)
     if "horizon" in trajectory:
-        last=trajectory.iloc[-1]
-        figure.update_xaxes(range=[0,last.horizon])
-        note="Reached horizon" if last.step==last.horizon else "Reached end of scenario data"
-        if last.violation>0:
-            note=f"Ended at step {last.step}: outlet {last.outlet_temperature:.2f} °C > limit {outlet_limit:.2f} °C"
-        figure.add_vline(x=last.step,line_dash="dot",row=1,col=1)
-        figure.add_annotation(x=.5,y=1.03,xref="paper",yref="paper",text=note,showarrow=False)
+        last = trajectory.iloc[-1]
+        figure.update_xaxes(range=[0, last.horizon])
+        note = "Reached horizon" if last.step == last.horizon else "Reached end of scenario data"
+        if last.violation > 0:
+            note = f"Ended at step {last.step}: outlet {last.outlet_temperature:.2f} °C > limit {outlet_limit:.2f} °C"
+        figure.add_vline(x=last.step, line_dash="dot", row=1, col=1)
+        figure.add_annotation(x=0.5, y=0.52, xref="paper", yref="paper", text=note, showarrow=False)
     figure.add_hrect(
         y0=outlet_limit - 1,
         y1=outlet_limit,
@@ -124,35 +147,17 @@ def replay_chart(trajectory, outlet_limit, comparison=None):
         secondary_y=True,
     )
     figure.update_xaxes(title="Step", row=2, col=1)
-    return dark_layout(figure,height=460)
-
-
-def controller_scatter(summary: pd.DataFrame) -> go.Figure:
-    grouped = summary.groupby("controller", as_index=False).mean(numeric_only=True)
-    figure = px.scatter_3d(
-        grouped,
-        x="mean_p_dc",
-        y="episode_violation_rate",
-        z="switching_rate",
-        color="controller",
-        color_discrete_map=CONTROLLER_COLOURS,
-        text="controller",
-        hover_name="controller",
-    )
-    figure.update_scenes(camera_eye={"x":1.6,"y":1.5,"z":1.3},xaxis_showgrid=False,yaxis_showgrid=False,zaxis_showgrid=False,yaxis_tickformat=".0%",zaxis_tickformat=".0%")
-    figure.update_layout(
-        scene={
-            "xaxis_title": "P_DC (kW)",
-            "yaxis_title": "Violation rate",
-            "zaxis_title": "Switching rate",
-        }
-    )
-    return dark_layout(figure, height=430)
+    return dark_layout(figure, height=480)
 
 
 def learning_curve_chart(curves: pd.DataFrame) -> go.Figure:
     figure = px.line(
-        curves, x="step", y="reward", line_group="seed" if "seed" in curves else None, color="controller", color_discrete_map=CONTROLLER_COLOURS
+        curves,
+        x="step",
+        y="reward",
+        line_group="seed" if "seed" in curves else None,
+        color="controller",
+        color_discrete_map=CONTROLLER_COLOURS,
     )
     figure.update_traces(opacity=0.22)
     for controller, sample in curves.groupby("controller"):
@@ -202,11 +207,15 @@ def action_distribution_chart(trajectories: pd.DataFrame) -> go.Figure:
 
 
 def paired_savings_chart(trajectories: pd.DataFrame) -> go.Figure:
-    keys = ["seed","scenario","episode","step"]
-    baseline = trajectories.loc[trajectories.controller=="Rule-based",[*keys,"P_DC"]]
-    paired = trajectories.loc[trajectories.controller!="Rule-based"].merge(baseline,on=keys,suffixes=("","_baseline"),validate="many_to_one")
+    keys = ["seed", "scenario", "episode", "step"]
+    baseline = trajectories.loc[trajectories.controller == "Rule-based", [*keys, "P_DC"]]
+    paired = trajectories.loc[trajectories.controller != "Rule-based"].merge(
+        baseline, on=keys, suffixes=("", "_baseline"), validate="many_to_one"
+    )
     paired["saving"] = (paired.P_DC_baseline - paired.P_DC) * 2 / 60
-    comparison = paired.groupby(["controller","seed","scenario","episode"],as_index=False).saving.sum()
+    comparison = paired.groupby(
+        ["controller", "seed", "scenario", "episode"], as_index=False
+    ).saving.sum()
     grouped = (
         comparison.groupby("controller", as_index=False)["saving"]
         .agg(["mean", "std", "count"])

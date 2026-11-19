@@ -31,7 +31,9 @@ def evaluate_policy(
     trajectory_records: list[dict[str, float | int | str | bool]] = []
     for scenario_index, scenario in enumerate(env.scenarios):
         for episode in range(episodes_per_scenario):
-            observation, initial = env.reset(seed=seed + scenario_index * 100 + episode, options={"scenario": scenario})
+            observation, initial = env.reset(
+                seed=seed + scenario_index * 100 + episode, options={"scenario": scenario}
+            )
             total_reward, actions, outcomes = 0.0, [], []
             terminated = truncated = False
             step = 0
@@ -58,26 +60,36 @@ def evaluate_policy(
                     )
                 step += 1
             result = pd.DataFrame(outcomes)
-            records.append({
-                "scenario": scenario, "episode": episode, "total_reward": total_reward,
-                "mean_p_dc": result["P_DC"].mean(), "mean_pue": result["PUE"].mean(),
-                "mean_cop": result["CoP"].mean(),
-                "mean_outlet_temperature": result["outlet_temperature"].mean(),
-                "max_outlet_temperature": result["outlet_temperature"].max(),
-                "violation_count": int((result["violation"] > 0).sum()),
-                "max_violation": result["violation"].max(),
-                "switching_rate": float(np.mean(np.diff(actions) != 0)) if len(actions) > 1 else 0.0,
-                "steps": len(actions),
-                "steps_survived": len(actions),
-                "horizon": env.episode_horizon,
-                "survival_fraction": len(actions) / env.episode_horizon,
-                "violated": bool(terminated),
-                "end_reason": "violation" if terminated else "horizon" if step >= env.episode_horizon else "data_end",
-                "violating_step_share": float((result.violation > 0).mean()),
-                "start_row": initial.get("start_row"),
-            })
+            records.append(
+                {
+                    "scenario": scenario,
+                    "episode": episode,
+                    "total_reward": total_reward,
+                    "mean_p_dc": result["P_DC"].mean(),
+                    "mean_pue": result["PUE"].mean(),
+                    "mean_cop": result["CoP"].mean(),
+                    "mean_outlet_temperature": result["outlet_temperature"].mean(),
+                    "max_outlet_temperature": result["outlet_temperature"].max(),
+                    "violation_count": int((result["violation"] > 0).sum()),
+                    "max_violation": result["violation"].max(),
+                    "switching_rate": float(np.mean(np.diff(actions) != 0))
+                    if len(actions) > 1
+                    else 0.0,
+                    "steps": len(actions),
+                    "steps_survived": len(actions),
+                    "horizon": env.episode_horizon,
+                    "survival_fraction": len(actions) / env.episode_horizon,
+                    "violated": bool(terminated),
+                    "end_reason": "violation"
+                    if terminated
+                    else "horizon"
+                    if step >= env.episode_horizon
+                    else "data_end",
+                    "violating_step_share": float((result.violation > 0).mean()),
+                    "start_row": initial.get("start_row"),
+                }
+            )
     metrics = pd.DataFrame(records)
     if return_trajectories:
         return EvaluationResult(metrics, pd.DataFrame(trajectory_records))
     return metrics
-

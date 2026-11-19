@@ -84,7 +84,9 @@ def prepare_experiment(
     training_data, evaluation_data, held_out = make_split(data, split_name)
     train_transitions = make_transition_table(training_data)
     evaluation_transitions = make_transition_table(evaluation_data)
-    model = TransitionModel(random_state=seed, n_estimators=trees,variant=variant).fit(train_transitions)
+    model = TransitionModel(random_state=seed, n_estimators=trees, variant=variant).fit(
+        train_transitions
+    )
     in_sample = model.score(train_transitions)
     evaluation_mae = model.score(evaluation_transitions)
     diagnostics = ModelDiagnostics(
@@ -106,7 +108,14 @@ def prepare_experiment(
     )
 
 
-def _environment(context: ExperimentContext, *, outlet_limit: float, horizon: int, training: bool, safe_starts: bool):
+def _environment(
+    context: ExperimentContext,
+    *,
+    outlet_limit: float,
+    horizon: int,
+    training: bool,
+    safe_starts: bool,
+):
     data = context.training_data if training else context.evaluation_data
     return DataCenterCoolingEnv(
         data,
@@ -129,15 +138,17 @@ def run_controller(
     deep_timesteps: int,
     seed: int,
     safe_starts: bool = True,
-    tie_margin: float = .05,
+    tie_margin: float = 0.05,
     zero_initialisation: bool = False,
     progress_callback: Callable[[int, int, float], None] | None = None,
 ) -> ControllerResult:
     """Train (where needed) and evaluate one controller under a prepared split."""
     if controller not in CONTROLLERS:
         raise ValueError(f"Unknown controller: {controller}")
-    train_env = _environment(context, outlet_limit=outlet_limit, horizon=horizon, training=True, safe_starts=safe_starts)
-    if not train_env.scenarios and controller not in {"Fixed setpoint","Rule-based"}:
+    train_env = _environment(
+        context, outlet_limit=outlet_limit, horizon=horizon, training=True, safe_starts=safe_starts
+    )
+    if not train_env.scenarios and controller not in {"Fixed setpoint", "Rule-based"}:
         raise ValueError(f"No feasible training scenarios at {outlet_limit:g} °C.")
     started = perf_counter()
     learning_curve = pd.DataFrame(columns=["step", "reward"])
@@ -146,7 +157,9 @@ def run_controller(
         agent = FixedPolicy()
         action_fn = agent.predict
     elif controller == "Rule-based":
-        agent = RuleBasedPolicy(warning_temperature=outlet_limit - 1, lower_temperature=min(24, outlet_limit - 3))
+        agent = RuleBasedPolicy(
+            warning_temperature=outlet_limit - 1, lower_temperature=min(24, outlet_limit - 3)
+        )
         action_fn = agent.predict
     elif controller in {"Q-Learning", "SARSA"}:
         algorithm = "q_learning" if controller == "Q-Learning" else "sarsa"
@@ -165,17 +178,30 @@ def run_controller(
         action_fn = lambda observation: agent.select_action(observation, explore=False)
     else:
         trainer = train_dqn if controller == "DQN" else train_ppo
-        agent = trainer(train_env, total_timesteps=deep_timesteps, seed=seed, progress_callback=progress_callback)
+        agent = trainer(
+            train_env,
+            total_timesteps=deep_timesteps,
+            seed=seed,
+            progress_callback=progress_callback,
+        )
         learning_curve = agent.learning_curve
         action_fn = lambda observation: model_action(agent, observation)
     training_seconds = perf_counter() - started
     evaluation = evaluate_policy(
-        _environment(context, outlet_limit=outlet_limit, horizon=horizon, training=False, safe_starts=safe_starts),
+        _environment(
+            context,
+            outlet_limit=outlet_limit,
+            horizon=horizon,
+            training=False,
+            safe_starts=safe_starts,
+        ),
         action_fn,
         episodes_per_scenario=episodes_per_scenario,
         seed=seed,
         return_trajectories=True,
-        explain=getattr(agent,"explain",None) if controller not in {"DQN","PPO"} else lambda observation: explain_deep(agent,observation),
+        explain=getattr(agent, "explain", None)
+        if controller not in {"DQN", "PPO"}
+        else lambda observation: explain_deep(agent, observation),
     )
     assert isinstance(evaluation, EvaluationResult)
     metrics = evaluation.scenario_metrics.copy()
@@ -202,11 +228,20 @@ def diagnostics_frame(diagnostics: ModelDiagnostics) -> pd.DataFrame:
     for target in TARGET_COLUMNS:
         records.extend(
             [
-                {"target": target, "partition": "In-sample", "mae": diagnostics.in_sample_mae[target]},
-                {"target": target, "partition": "Evaluation", "mae": diagnostics.held_out_mae[target]},
+                {
+                    "target": target,
+                    "partition": "In-sample",
+                    "mae": diagnostics.in_sample_mae[target],
+                },
+                {
+                    "target": target,
+                    "partition": "Evaluation",
+                    "mae": diagnostics.held_out_mae[target],
+                },
             ]
         )
     return pd.DataFrame(records)
+
 
 def action_sensitivity(context):
     """One-factor changes around each scenario's median state, within training bounds."""
@@ -223,9 +258,13 @@ def action_sensitivity(context):
         changed = typical.copy()
         changed[supply] = (changed[supply] + shift).clip(*context.supply_bounds)
         differences = context.model.predict(changed)[targets] - baseline
-        records.append(differences.assign(scenario=typical.scenario, shift=shift,
-                                          applied=changed[supply] - typical[supply]))
+        records.append(
+            differences.assign(
+                scenario=typical.scenario, shift=shift, applied=changed[supply] - typical[supply]
+            )
+        )
     return pd.concat(records, ignore_index=True)
+
 
 def explain_deep(model, observation):
     import torch
@@ -238,5 +277,8 @@ def explain_deep(model, observation):
         else:
             values = model.policy.get_distribution(tensor).distribution.probs
             label = "Probability"
-        return label + " (decrease / maintain / increase): " + " / ".join(f"{value:.2f}" for value in values.flatten().tolist())
-
+        return (
+            label
+            + " (decrease / maintain / increase): "
+            + " / ".join(f"{value:.2f}" for value in values.flatten().tolist())
+        )

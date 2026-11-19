@@ -11,7 +11,6 @@ class FixedPolicy:
     def predict(self, observation: np.ndarray) -> int:
         return 1
 
-
     def explain(self, observation):
         return "Fixed setpoint → maintain"
 
@@ -36,6 +35,9 @@ class RuleBasedPolicy:
     def explain(self, observation):
         outlet = float(observation[1])
         action = self.predict(observation)
-        condition = [f"≤ {self.lower_temperature:g}", f"inside {self.lower_temperature:g}–{self.warning_temperature:g}", f"≥ {self.warning_temperature:g}"][action]
-        return f"{outlet:.2f} °C {condition} °C → {('decrease','maintain','increase')[action]}"
-
+        condition = [
+            f"≤ {self.lower_temperature:g}",
+            f"inside {self.lower_temperature:g}–{self.warning_temperature:g}",
+            f"≥ {self.warning_temperature:g}",
+        ][action]
+        return f"{outlet:.2f} °C {condition} °C → {('decrease', 'maintain', 'increase')[action]}"
