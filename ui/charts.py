@@ -34,7 +34,7 @@ def scenario_heatmap(summary: pd.DataFrame, metric: str, held_out: set[str]) -> 
             (
                 "n/a"
                 if pd.isna(value)
-                else format(value, ".1%" if metric == "violation_rate" else ".2f")
+                else format(value, ".1%" if metric == "episode_violation_rate" else ".2f")
             )
             for value in row
         ]
@@ -47,6 +47,8 @@ def scenario_heatmap(summary: pd.DataFrame, metric: str, held_out: set[str]) -> 
             y=list(range(4)),
             colorscale=[[0, "#26334b"], [0.01, "#156078"], [0.4, "#32a7a9"], [1, "#dfc45a"]],
             showscale=False,
+            customdata=summary.pivot_table(index="configuration",columns="load_percent",values="mean_steps_survived").reindex(index=configs,columns=loads) if "mean_steps_survived" in summary else None,
+            hovertemplate="Value %{z:.3g}<br>Mean steps survived %{customdata:.1f}<extra></extra>",
         )
     )
     for row, config in enumerate(configs):
@@ -115,7 +117,7 @@ def controller_scatter(summary: pd.DataFrame) -> go.Figure:
     figure = px.scatter_3d(
         grouped,
         x="mean_p_dc",
-        y="violation_rate",
+        y="episode_violation_rate",
         z="switching_rate",
         color="controller",
         color_discrete_map=CONTROLLER_COLOURS,

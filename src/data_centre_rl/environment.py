@@ -119,7 +119,7 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         self._last_action = 1
         row = self._frame.loc[self._index]
         self._state = {column: float(row[column]) for column in STATE_COLUMNS}
-        return self._observation(), self._info()
+        return self._observation(), {**self._info(), "start_row": self._index}
 
     def step(self, action: int):
         if self._frame is None:

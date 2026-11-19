@@ -30,7 +30,7 @@ def evaluate_policy(
     trajectory_records: list[dict[str, float | int | str | bool]] = []
     for scenario_index, scenario in enumerate(env.scenarios):
         for episode in range(episodes_per_scenario):
-            observation, _ = env.reset(seed=seed + scenario_index * 100 + episode, options={"scenario": scenario})
+            observation, initial = env.reset(seed=seed + scenario_index * 100 + episode, options={"scenario": scenario})
             total_reward, actions, outcomes = 0.0, [], []
             terminated = truncated = False
             step = 0
@@ -45,7 +45,9 @@ def evaluate_policy(
                         {
                             "scenario": scenario,
                             "episode": episode,
-                            "step": step,
+                            "step": step + 1,
+                            "start_row": initial.get("start_row"),
+                            "horizon": env.episode_horizon,
                             "action": action,
                             "reward": reward,
                             **info,
@@ -63,6 +65,13 @@ def evaluate_policy(
                 "max_violation": result["violation"].max(),
                 "switching_rate": float(np.mean(np.diff(actions) != 0)) if len(actions) > 1 else 0.0,
                 "steps": len(actions),
+                "steps_survived": len(actions),
+                "horizon": env.episode_horizon,
+                "survival_fraction": len(actions) / env.episode_horizon,
+                "violated": bool(terminated),
+                "end_reason": "violation" if terminated else "horizon" if step >= env.episode_horizon else "data_end",
+                "violating_step_share": float((result.violation > 0).mean()),
+                "start_row": initial.get("start_row"),
             })
     metrics = pd.DataFrame(records)
     if return_trajectories:

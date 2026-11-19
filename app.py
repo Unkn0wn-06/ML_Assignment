@@ -62,7 +62,8 @@ def summarise(results: dict[str, ControllerResult], data: pd.DataFrame) -> pd.Da
     )
     metadata["load_percent"] *= 100
     summary = metrics.merge(metadata, on="scenario", how="left")
-    summary["violation_rate"] = summary["violation_count"] / summary["steps"].clip(lower=1)
+    summary["episode_violation_rate"] = summary.violated.astype(float)
+    summary["mean_steps_survived"] = summary.steps_survived
     return summary
 
 
@@ -89,8 +90,9 @@ def comparison_table(summary: pd.DataFrame) -> pd.DataFrame:
         mean_pue=("mean_pue", "mean"),
         mean_cop=("mean_cop", "mean"),
         max_outlet_temperature=("max_outlet_temperature", "max"),
-        violation_rate=("violation_rate", "mean"),
+        episode_violation_rate=("episode_violation_rate", "mean"),
         max_violation=("max_violation", "max"),
+        mean_steps_survived=("steps_survived","mean"),
         switching_rate=("switching_rate", "mean"),
         reward=("total_reward", "mean"),
     )
@@ -345,7 +347,8 @@ with overview_tab:
         status, status_class = safety_status(
             selected["max_outlet_temperature"].max(), st.session_state["outlet_limit"]
         )
-        columns = st.columns(5)
+        columns = st.columns(6)
+        columns[5].metric(f"Mean steps survived (of {int(selected.horizon.iloc[0])})",f"{selected.steps_survived.mean():.1f}")
         columns[0].metric(
             "Mean P_DC (kW)",
             f"{selected['mean_p_dc'].mean():.3f}",
@@ -360,9 +363,9 @@ with overview_tab:
             delta(summary, controller, "mean_outlet_temperature"),
         )
         columns[3].metric(
-            "Violation rate",
-            f"{selected['violation_rate'].mean():.1%}",
-            delta(summary, controller, "violation_rate"),
+            "Episodes ending in violation",
+            f"{selected['episode_violation_rate'].mean():.1%}",
+            delta(summary, controller, "episode_violation_rate"),
         )
         columns[4].metric(
             "Safety status",
@@ -406,7 +409,7 @@ with overview_tab:
             render_room(replay, configuration)
         heat, episode_panel, trade = st.columns(3)
         with card(heat, "Scenario map", "Grey n/a cells have no evaluated steps."):
-            metric = st.selectbox("Metric", ["violation_rate", "mean_p_dc", "mean_pue"])
+            metric = st.selectbox("Metric", ["episode_violation_rate","mean_steps_survived", "mean_p_dc", "mean_pue"])
             st.plotly_chart(scenario_heatmap(selected, metric, context.held_out_scenarios))
         with card(episode_panel, "Episode replay", "Warning band starts 1 °C below the limit."):
             st.plotly_chart(replay_chart(replay, st.session_state["outlet_limit"]))
@@ -421,11 +424,11 @@ with overview_tab:
                     px.scatter(
                         points,
                         x="mean_p_dc",
-                        y="violation_rate",
+                        y="episode_violation_rate",
                         size="marker_size",
                         color="controller",
                         color_discrete_map=CONTROLLER_COLOURS,
-                        labels={"mean_p_dc": "Power (kW)", "violation_rate": "Violation rate"},
+                        labels={"mean_p_dc": "Power (kW)", "episode_violation_rate": "Violation rate"},
                     )
                 )
             )
@@ -447,8 +450,9 @@ with compare_tab:
                     "mean_pue",
                     "mean_cop",
                     "max_outlet_temperature",
-                    "violation_rate",
+                    "episode_violation_rate",
                     "max_violation",
+                    "mean_steps_survived",
                     "switching_rate",
                     "reward",
                 ]
@@ -462,7 +466,7 @@ with compare_tab:
                         "mean_cop": "{:.2f}",
                         "max_outlet_temperature": "{:.1f}",
                         "max_violation": "{:.1f}",
-                        "violation_rate": "{:.1%}",
+                        "episode_violation_rate": "{:.1%}",
                         "switching_rate": "{:.1%}",
                         "reward": "{:.1f}",
                     }
@@ -472,7 +476,7 @@ with compare_tab:
                         "mean_p_dc",
                         "mean_pue",
                         "max_outlet_temperature",
-                        "violation_rate",
+                        "episode_violation_rate",
                         "max_violation",
                         "switching_rate",
                     ],
@@ -486,7 +490,7 @@ with compare_tab:
                     "max_outlet_temperature": "Peak outlet (°C)",
                     "max_violation": "Peak excess (°C)",
                     "switching_rate": "Switching",
-                    "violation_rate": "Violations",
+                    "mean_steps_survived":"Mean steps survived","episode_violation_rate": "Episodes violated",
                     "reward": "Return",
                 },
                 hide_index=True,
