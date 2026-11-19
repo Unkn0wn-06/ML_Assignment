@@ -45,7 +45,18 @@ try:
         page = browser.new_page(viewport={"width": 1600, "height": 1000}, device_scale_factor=1)
         page.goto(url)
         page.get_by_role("button", name="Run experiment").click(timeout=60000)
-        page.get_by_text("Scenario map", exact=True).wait_for(timeout=120000)
+        page.get_by_text("Scenario map", exact=True).wait_for(timeout=300000)
+        page.get_by_role("combobox", name="Replay scenario").click()
+        page.get_by_role("option", name="PlateTest_100percent · stressed", exact=True).click()
+        page.wait_for_timeout(1000)
+        picker = page.get_by_role("combobox", name="Compare with")
+        picker.click()
+        page.get_by_role("option", name="Q-Learning", exact=True).click()
+        page.wait_for_function(
+            "Array.from(document.querySelectorAll('.js-plotly-plot')).some(plot=>plot.data?.some(trace=>trace.name==='Q-Learning Outlet'))",
+            timeout=60000,
+        )
+        page.locator('[data-testid="stMain"]').evaluate("el => el.scrollTop=0")
         for name in ["Overview", "Compare controllers", "Model diagnostics", "Source data"]:
             page.get_by_role("tab", name=name, exact=True).click()
             for height in [1000, 2800]:
