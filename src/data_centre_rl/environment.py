@@ -43,6 +43,9 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         episode_horizon: int = 100,
         reward_weights: RewardWeights | None = None,
         scenarios: list[str] | None = None,
+        termination_excess: float = 1.5,
+        termination_penalty_per_step: float | None = None,
+        legacy_termination: bool = False,
         supply_bounds: tuple[float, float] | None = None,
     ) -> None:
         super().__init__()
@@ -56,6 +59,12 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         self.cooling_step = cooling_step
         self.episode_horizon = episode_horizon
         self.reward_weights = reward_weights or RewardWeights()
+        self.termination_excess = termination_excess
+        self.legacy_termination = legacy_termination
+        self.termination_penalty_per_step = (
+            np.ceil(self.reward_weights.energy * self.data.P_DC.max() + self.reward_weights.pue * self.data.PUE.max())
+            if termination_penalty_per_step is None else termination_penalty_per_step
+        )
         self.supply_bounds = supply_bounds or transition_model.observed_supply_bounds(self.data)
         available = sorted(self.data["scenario"].unique())
         self.scenarios = scenarios or available
@@ -151,7 +160,11 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         violation = max(0.0, self._state["Outlet Avg Temp"] - self.outlet_limit)
         p_dc = max(0.0, float(prediction["P_DC"]))
         pue = max(0.0, float(prediction["PUE"]))
+        serious = violation > self.termination_excess
+        terminated = bool(violation > 0 if self.legacy_termination else serious)
+        remaining = max(0, self.episode_horizon - self._steps - 1)
         components = {
+            "termination_penalty": self.termination_penalty_per_step * remaining if terminated and not self.legacy_termination else 0.0,
             "energy_penalty": self.reward_weights.energy * p_dc,
             "pue_penalty": self.reward_weights.pue * pue,
             "temperature_penalty": self.reward_weights.temperature * violation**2,
@@ -161,10 +174,11 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         self._index = next_index
         self._steps += 1
         self._last_action = action
-        terminated = bool(violation > 0.0)
         truncated = bool(self._steps >= self.episode_horizon or self._index >= len(self._frame) - 1)
         info = self._info(prediction)
         info.update(components)
+        info.update(terminated=terminated, terminated_serious=bool(terminated and serious),
+                    supply_lower=self.supply_bounds[0], supply_upper=self.supply_bounds[1])
         info["violation"] = violation
         info["proposed_supply"] = proposed_supply
         info["unclipped_supply"] = float(unclipped_supply)

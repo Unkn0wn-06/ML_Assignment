@@ -206,32 +206,17 @@ def action_distribution_chart(trajectories: pd.DataFrame) -> go.Figure:
     return dark_layout(figure)
 
 
-def paired_savings_chart(trajectories: pd.DataFrame) -> go.Figure:
-    keys = ["seed", "scenario", "episode", "step"]
-    baseline = trajectories.loc[trajectories.controller == "Rule-based", [*keys, "P_DC"]]
-    paired = trajectories.loc[trajectories.controller != "Rule-based"].merge(
-        baseline, on=keys, suffixes=("", "_baseline"), validate="many_to_one"
-    )
-    paired["saving"] = (paired.P_DC_baseline - paired.P_DC) * 2 / 60
-    comparison = paired.groupby(
-        ["controller", "seed", "scenario", "episode"], as_index=False
-    ).saving.sum()
-    grouped = (
-        comparison.groupby("controller", as_index=False)["saving"]
-        .agg(["mean", "std", "count"])
-        .reset_index()
-    )
-    grouped["ci"] = 1.96 * grouped["std"].fillna(0) / np.sqrt(grouped["count"].clip(lower=1))
-    figure = go.Figure(
-        go.Bar(
-            x=grouped["controller"],
-            y=grouped["mean"],
-            error_y={"type": "data", "array": grouped["ci"]},
-            marker_color=[
-                CONTROLLER_COLOURS.get(value, "#38bdf8") for value in grouped["controller"]
-            ],
-        )
-    )
-    figure.add_hline(y=0, line_color="#94a3b8")
-    figure.update_layout(yaxis_title="Paired energy saving (kWh), common steps")
-    return dark_layout(figure)
+def paired_savings(metrics):
+    keys = ["scenario", "start_row", "seed", "episode", "horizon"]
+    full = metrics.loc[metrics.steps_survived == metrics.horizon]
+    base = full.loc[full.controller == "Rule-based"]
+    rows = []
+    for controller in metrics.controller.unique():
+        if controller == "Rule-based":
+            continue
+        pairs = full.loc[full.controller == controller].merge(base, on=keys, suffixes=("", "_base"), validate="one_to_one")
+        saved = (pairs.mean_p_dc_base - pairs.mean_p_dc).mean()
+        rows.append({"Controller": controller, "Pairs": len(pairs), "Saving (kW)": saved,
+                     "Saving (%)": 100 * saved / pairs.mean_p_dc_base.mean(),
+                     "Any violation difference (pp)": 100 * (pairs.any_violation.mean() - pairs.any_violation_base.mean())})
+    return pd.DataFrame(rows)

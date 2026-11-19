@@ -26,7 +26,7 @@ from ui.charts import (
     action_distribution_chart,
     dark_layout,
     learning_curve_chart,
-    paired_savings_chart,
+    paired_savings,
     replay_chart,
     scenario_heatmap,
 )
@@ -62,7 +62,7 @@ def summarise(results: dict[str, ControllerResult], data: pd.DataFrame) -> pd.Da
     )
     metadata["load_percent"] *= 100
     summary = metrics.merge(metadata, on="scenario", how="left")
-    summary["episode_violation_rate"] = summary.violated.astype(float)
+    summary["episode_violation_rate"] = summary.any_violation.astype(float)
     summary["mean_steps_survived"] = summary.steps_survived
     return summary
 
@@ -93,7 +93,8 @@ def comparison_table(summary: pd.DataFrame) -> pd.DataFrame:
         max_violation=("max_violation", "max"),
         mean_steps_survived=("steps_survived", "mean"),
         switching_rate=("switching_rate", "mean"),
-        reward=("total_reward", "mean"),
+        violating_step_share=("violating_step_share", "mean"),
+        reward=("return_per_step", "mean"),
     )
     return grouped
 
@@ -215,6 +216,7 @@ with st.sidebar:
     repetitions = st.slider("Episodes per scenario", 1, 10, 3)
     st.caption("TRAINING")
     with st.expander("Advanced tabular settings"):
+        legacy_termination = st.checkbox("Legacy termination")
         tie_margin = st.number_input(
             "Near-tie margin (reward units)", min_value=0.0, value=0.05, step=0.01
         )
@@ -284,6 +286,7 @@ if run and data is not None:
                         tabular_episodes,
                         deep_timesteps,
                         training_seed,
+                        legacy_termination,
                         tie_margin,
                         zero_initialisation,
                         safe,
@@ -300,6 +303,7 @@ if run and data is not None:
                                 tabular_episodes=tabular_episodes,
                                 deep_timesteps=deep_timesteps,
                                 seed=training_seed,
+                                legacy_termination=legacy_termination,
                                 tie_margin=tie_margin,
                                 zero_initialisation=zero_initialisation,
                                 progress_callback=report,
@@ -520,6 +524,7 @@ with compare_tab:
                     "max_violation",
                     "mean_steps_survived",
                     "switching_rate",
+                    "violating_step_share",
                     "reward",
                 ]
             ]
@@ -535,7 +540,8 @@ with compare_tab:
                         "max_violation": "{:.1f}",
                         "episode_violation_rate": "{:.1%}",
                         "switching_rate": "{:.1%}",
-                        "reward": "{:.1f}",
+                        "violating_step_share": "{:.1%}",
+                        "reward": "{:.2f}",
                     }
                 )
                 .highlight_min(
@@ -558,8 +564,9 @@ with compare_tab:
                     "max_violation": "Peak excess (°C)",
                     "switching_rate": "Switching",
                     "mean_steps_survived": "Mean steps survived",
-                    "episode_violation_rate": "Episodes violated",
-                    "reward": "Return",
+                    "episode_violation_rate": "Episodes with any violation",
+                    "violating_step_share": "Violating steps (%)",
+                    "reward": "Return / step",
                 },
                 hide_index=True,
                 width="stretch",
@@ -581,17 +588,9 @@ with compare_tab:
                 )
         with card(right, "Action distribution", "Share of evaluated steps for each controller."):
             st.plotly_chart(action_distribution_chart(trajectories), width="stretch")
-        if summary.episode.max() < 1:
-            st.info("Raise Episodes per scenario to at least 2 for paired savings intervals.")
-        elif "Rule-based" in results and len(results) > 1:
-            st.caption(
-                f"{len(summary.loc[summary.controller == 'Rule-based'])} matched (scenario, seed, episode) pairs per comparison."
-            )
-            card(
-                st,
-                "Paired energy saving",
-                "Common steps from matched starts, approximate 95% interval.",
-            ).plotly_chart(paired_savings_chart(trajectories), width="stretch")
+        if "Rule-based" in results and len(results) > 1:
+            with card(st, "Paired power and safety", "Full-horizon episodes with matching starts. Differences below ~1% are not practically meaningful."):
+                st.dataframe(paired_savings(summary), hide_index=True)
         st.download_button(
             "Download comparison table",
             visible.to_csv(index=False).encode(),

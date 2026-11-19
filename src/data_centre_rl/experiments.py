@@ -115,6 +115,7 @@ def _environment(
     horizon: int,
     training: bool,
     safe_starts: bool,
+    **termination,
 ):
     data = context.training_data if training else context.evaluation_data
     return DataCenterCoolingEnv(
@@ -124,6 +125,7 @@ def _environment(
         episode_horizon=horizon,
         safe_starts=safe_starts,
         supply_bounds=context.supply_bounds,
+        **termination,
     )
 
 
@@ -138,6 +140,9 @@ def run_controller(
     deep_timesteps: int,
     seed: int,
     safe_starts: bool = True,
+    legacy_termination: bool = False,
+    termination_excess: float = 1.5,
+    termination_penalty_per_step: float | None = None,
     tie_margin: float = 0.05,
     zero_initialisation: bool = False,
     progress_callback: Callable[[int, int, float], None] | None = None,
@@ -146,7 +151,7 @@ def run_controller(
     if controller not in CONTROLLERS:
         raise ValueError(f"Unknown controller: {controller}")
     train_env = _environment(
-        context, outlet_limit=outlet_limit, horizon=horizon, training=True, safe_starts=safe_starts
+        context, outlet_limit=outlet_limit, horizon=horizon, training=True, safe_starts=safe_starts, legacy_termination=legacy_termination, termination_excess=termination_excess, termination_penalty_per_step=termination_penalty_per_step
     )
     if not train_env.scenarios and controller not in {"Fixed setpoint", "Rule-based"}:
         raise ValueError(f"No feasible training scenarios at {outlet_limit:g} °C.")
@@ -192,7 +197,7 @@ def run_controller(
             context,
             outlet_limit=outlet_limit,
             horizon=horizon,
-            training=False,
+            training=False, legacy_termination=legacy_termination, termination_excess=termination_excess, termination_penalty_per_step=train_env.termination_penalty_per_step,
             safe_starts=safe_starts,
         ),
         action_fn,
@@ -205,6 +210,9 @@ def run_controller(
     )
     assert isinstance(evaluation, EvaluationResult)
     metrics = evaluation.scenario_metrics.copy()
+    metrics["termination_penalty_per_step"] = train_env.termination_penalty_per_step
+    metrics["legacy_termination"] = legacy_termination
+    metrics["termination_excess"] = termination_excess
     metrics["seed"] = seed
     metrics["controller"] = controller
     trajectories = evaluation.trajectories.copy()

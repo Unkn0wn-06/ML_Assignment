@@ -64,6 +64,11 @@ def evaluate_policy(
                 {
                     "scenario": scenario,
                     "episode": episode,
+                    "return_per_step": total_reward / step,
+                    "any_violation": bool((result.violation > 0).any()),
+                    "mean_excess": result.violation.mean(),
+                    "violation_degree_steps": result.violation.sum(),
+                    "terminated_serious": info.get("terminated_serious", False),
                     "total_reward": total_reward,
                     "mean_p_dc": result["P_DC"].mean(),
                     "mean_pue": result["PUE"].mean(),
