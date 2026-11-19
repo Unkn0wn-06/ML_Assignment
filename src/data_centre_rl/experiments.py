@@ -140,9 +140,11 @@ def run_controller(
     learning_curve = pd.DataFrame(columns=["step", "reward"])
     agent = None
     if controller == "Fixed setpoint":
-        action_fn = FixedPolicy().predict
+        agent = FixedPolicy()
+        action_fn = agent.predict
     elif controller == "Rule-based":
-        action_fn = RuleBasedPolicy(warning_temperature=outlet_limit - 1, lower_temperature=min(24, outlet_limit - 3)).predict
+        agent = RuleBasedPolicy(warning_temperature=outlet_limit - 1, lower_temperature=min(24, outlet_limit - 3))
+        action_fn = agent.predict
     elif controller in {"Q-Learning", "SARSA"}:
         algorithm = "q_learning" if controller == "Q-Learning" else "sarsa"
         agent = train_tabular(
@@ -168,6 +170,7 @@ def run_controller(
         episodes_per_scenario=episodes_per_scenario,
         seed=seed,
         return_trajectories=True,
+        explain=getattr(agent,"explain",None) if controller not in {"DQN","PPO"} else lambda observation: explain_deep(agent,observation),
     )
     assert isinstance(evaluation, EvaluationResult)
     metrics = evaluation.scenario_metrics.copy()
@@ -218,4 +221,17 @@ def action_sensitivity(context):
         records.append(differences.assign(scenario=typical.scenario, shift=shift,
                                           applied=changed[supply] - typical[supply]))
     return pd.concat(records, ignore_index=True)
+
+def explain_deep(model, observation):
+    import torch
+
+    with torch.no_grad():
+        tensor, _ = model.policy.obs_to_tensor(observation)
+        if hasattr(model, "q_net"):
+            values = model.q_net(tensor)
+            label = "Q"
+        else:
+            values = model.policy.get_distribution(tensor).distribution.probs
+            label = "Probability"
+        return label + " (decrease / maintain / increase): " + " / ".join(f"{value:.2f}" for value in values.flatten().tolist())
 

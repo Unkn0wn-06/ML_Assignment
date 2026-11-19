@@ -23,6 +23,7 @@ def evaluate_policy(
     *,
     episodes_per_scenario: int = 3,
     seed: int = 42,
+    explain: Callable | None = None,
     return_trajectories: bool = False,
 ) -> pd.DataFrame | EvaluationResult:
     """Evaluate a controller from matched seeded initial states per scenario."""
@@ -36,6 +37,7 @@ def evaluate_policy(
             step = 0
             while not (terminated or truncated):
                 action = action_fn(observation)
+                reason = explain(observation) if return_trajectories and explain else None
                 observation, reward, terminated, truncated, info = env.step(action)
                 total_reward += reward
                 actions.append(action)
@@ -49,6 +51,7 @@ def evaluate_policy(
                             "start_row": initial.get("start_row"),
                             "horizon": env.episode_horizon,
                             "action": action,
+                            "decision_reason": reason or "n/a",
                             "reward": reward,
                             **info,
                         }

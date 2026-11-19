@@ -11,7 +11,7 @@ import streamlit.components.v1 as components
 
 def render_room(trajectory: pd.DataFrame, configuration: str) -> None:
     """Render two rows of cosmetic racks coloured from one AAU average trajectory."""
-    records = trajectory[["step", "outlet_temperature", "action", "proposed_supply"]].to_dict("records")
+    records = trajectory[["step", "outlet_temperature", "action", "proposed_supply", "decision_reason"]].to_dict("records")
     payload = json.dumps(records)
     configuration_payload = json.dumps(configuration)
     components.html(
@@ -22,6 +22,7 @@ def render_room(trajectory: pd.DataFrame, configuration: str) -> None:
             <button id="play">Play</button><input id="step" type="range" min="0" value="0" style="flex:1" />
             <select id="speed" aria-label="Playback speed"><option value="600">1×</option><option value="300">2×</option><option value="1200">½×</option></select><span id="label"></span>
           </div><small>24 °C 🟢 · 27.5 °C 🟡 · 31 °C 🔴 | Cosmetic rack variation</small><div id="room"></div>
+          <small id="decision"></small>
         </div>
         <script>{(Path(__file__).parent / "static/three.min.js").read_text(encoding="utf-8")}</script>
         <script>
@@ -47,6 +48,7 @@ def render_room(trajectory: pd.DataFrame, configuration: str) -> None:
         }}
         function update() {{ const current=data[Number(slider.value)] || {{step:0,outlet_temperature:0}}; const t=current.outlet_temperature; const ratio=Math.max(0,Math.min(1,(t-24)/7));
           racks.forEach((rack,index)=>{{ const shifted=Math.max(0,Math.min(1,ratio+((index%5)-2)*.025)); const color=new THREE.Color().setHSL((1-shifted)*.34,.86,.46); rack.material.color=color; rack.material.emissive=color.clone().multiplyScalar(.16); rack.userData.plume.material.color=color; }});
+          document.getElementById('decision').textContent=current.decision_reason;
           label.textContent=`step ${{current.step}} · outlet ${{t.toFixed(1)}} °C · supply ${{current.proposed_supply.toFixed(1)}} °C · ${{["Decrease","Maintain","Increase"][current.action]}}`; renderer.render(scene,camera); }}
         new ResizeObserver(()=>{{renderer.setSize(root.clientWidth,420);camera.aspect=root.clientWidth/420;camera.updateProjectionMatrix();update()}}).observe(root);
         let angle=.6; renderer.domElement.onpointermove=event=>{{if(event.buttons===1){{angle+=event.movementX*.01;camera.position.set(12*Math.sin(angle),7,12*Math.cos(angle));camera.lookAt(0,0,0);update()}}}};

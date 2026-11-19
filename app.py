@@ -372,18 +372,21 @@ with overview_tab:
             {"GREEN": "🟢", "AMBER": "🟠", "RED": "🔴"}[status] + " " + status.title(),
         )
         trajectory = results[controller].trajectories
-        scenario = selectors[1].selectbox(
-            "Replay scenario", sorted(trajectory["scenario"].unique())
-        )
         replay_seed = (
             selectors[1].selectbox("Replay seed", sorted(trajectory.seed.unique()))
             if trajectory.seed.nunique() > 1
             else trajectory.seed.iloc[0]
         )
         trajectory = trajectory.loc[trajectory.seed == replay_seed]
+        groups=trajectory.groupby(["scenario","episode"],sort=False)
+        interesting=[key for key, rows in groups if rows.action.nunique()>1 or rows.step.max()<rows.horizon.iloc[0]]
+        default_scenario,default_episode=interesting[0] if interesting else next(iter(groups.groups))
+        stress=context.evaluation_data.assign(hot=lambda rows: rows["Outlet Avg Temp"]>st.session_state["outlet_limit"]-1).groupby("scenario").hot.mean()
+        scenarios=sorted(trajectory.scenario.unique())
+        scenario=selectors[1].selectbox("Replay scenario",scenarios,index=scenarios.index(default_scenario),format_func=lambda name: f"{name} · {'stressed' if stress[name]>.1 else 'calm'}")
         episode = selectors[2].selectbox(
             "Replay episode",
-            sorted(trajectory.loc[trajectory["scenario"] == scenario, "episode"].unique()),
+            sorted(trajectory.loc[trajectory["scenario"] == scenario, "episode"].unique()),index=int(default_episode) if scenario==default_scenario else 0,
         )
         replay = trajectory.loc[
             (trajectory["scenario"] == scenario) & (trajectory["episode"] == episode)
@@ -412,7 +415,14 @@ with overview_tab:
             metric = st.selectbox("Metric", ["episode_violation_rate","mean_steps_survived", "mean_p_dc", "mean_pue"])
             st.plotly_chart(scenario_heatmap(selected, metric, context.held_out_scenarios))
         with card(episode_panel, "Episode replay", "Warning band starts 1 °C below the limit."):
-            st.plotly_chart(replay_chart(replay, st.session_state["outlet_limit"]))
+            outcome=selected.loc[(selected.scenario==scenario)&(selected.episode==episode)&(selected.seed==replay_seed)].iloc[0]
+            st.caption(f"{scenario} · {controller} · start row {outcome.start_row} · {outcome.steps_survived}/{outcome.horizon} steps · {outcome.end_reason} · {int(replay.action.diff().dropna().ne(0).sum())} switches · {int(replay.supply_clipped.sum())} clipped")
+            other=st.selectbox("Compare with",["None",*[name for name in results if name!=controller]])
+            comparison=None
+            if other!="None":
+                traces=results[other].trajectories
+                comparison=traces.loc[(traces.scenario==scenario)&(traces.episode==episode)&(traces.seed==replay_seed)&(traces.start_row==outcome.start_row)]
+            st.plotly_chart(replay_chart(replay, st.session_state["outlet_limit"],comparison))
         with card(
             trade, "Controller trade-offs", "Marker size in the projection reflects switching rate."
         ):

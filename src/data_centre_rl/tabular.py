@@ -51,6 +51,11 @@ class TabularAgent:
             return int(self.rng.integers(3))
         return int(np.argmax(self.q_values[state]))
 
+    def explain(self, observation):
+        values = self.q_values[self.discretizer.transform(observation)]
+        ordered = np.sort(values)
+        return f"Q (decrease / maintain / increase): {' / '.join(f'{value:.2f}' for value in values)}, gap {ordered[-1]-ordered[-2]:.2f}"
+
     def update_q_learning(
         self, observation: np.ndarray, action: int, reward: float, next_observation: np.ndarray, done: bool
     ) -> None:

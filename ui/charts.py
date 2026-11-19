@@ -70,7 +70,7 @@ def scenario_heatmap(summary: pd.DataFrame, metric: str, held_out: set[str]) -> 
     return dark_layout(figure)
 
 
-def replay_chart(trajectory, outlet_limit):
+def replay_chart(trajectory, outlet_limit, comparison=None):
     figure = make_subplots(rows=2, cols=1, shared_xaxes=True, specs=[[{}], [{"secondary_y": True}]])
     for field, label, row, secondary, colour in [
         ("outlet_temperature", "Outlet", 1, False, "#fb7185"),
@@ -82,12 +82,27 @@ def replay_chart(trajectory, outlet_limit):
             y=trajectory[field],
             name=label,
             mode="lines+markers",
-            line_color=colour,
+            line_color=CONTROLLER_COLOURS.get(trajectory.controller.iloc[0],colour) if "controller" in trajectory else colour,
             line_shape="hv" if secondary else "linear",
             row=row,
             col=1,
             secondary_y=secondary,
         )
+    if comparison is not None:
+        for field,label,row,secondary in [("outlet_temperature","Outlet",1,False),("proposed_supply","Supply",2,False),("action","Action",2,True)]:
+            name=comparison.controller.iloc[0]
+            figure.add_scatter(x=comparison.step,y=comparison[field],name=f"{name} {label}",line_color=CONTROLLER_COLOURS[name],line_dash="dot",line_shape="hv" if secondary else "linear",row=row,col=1,secondary_y=secondary)
+    if "controller" in trajectory and ("Rule-based" in trajectory.controller.values or (comparison is not None and "Rule-based" in comparison.controller.values)):
+        for threshold in [min(24,outlet_limit-3),outlet_limit-1]:
+            figure.add_hline(y=threshold,line_dash="dot",opacity=.5,row=1,col=1)
+    if "horizon" in trajectory:
+        last=trajectory.iloc[-1]
+        figure.update_xaxes(range=[0,last.horizon])
+        note="Reached horizon" if last.step==last.horizon else "Reached end of scenario data"
+        if last.violation>0:
+            note=f"Ended at step {last.step}: outlet {last.outlet_temperature:.2f} °C > limit {outlet_limit:.2f} °C"
+        figure.add_vline(x=last.step,line_dash="dot",row=1,col=1)
+        figure.add_annotation(x=.5,y=1.03,xref="paper",yref="paper",text=note,showarrow=False)
     figure.add_hrect(
         y0=outlet_limit - 1,
         y1=outlet_limit,
@@ -109,7 +124,7 @@ def replay_chart(trajectory, outlet_limit):
         secondary_y=True,
     )
     figure.update_xaxes(title="Step", row=2, col=1)
-    return dark_layout(figure)
+    return dark_layout(figure,height=460)
 
 
 def controller_scatter(summary: pd.DataFrame) -> go.Figure:

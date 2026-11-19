@@ -12,6 +12,10 @@ class FixedPolicy:
         return 1
 
 
+    def explain(self, observation):
+        return "Fixed setpoint → maintain"
+
+
 class RuleBasedPolicy:
     """Hysteresis controller using only the observed outlet temperature."""
 
@@ -28,4 +32,10 @@ class RuleBasedPolicy:
         if outlet_temperature <= self.lower_temperature:
             return 0
         return 1
+
+    def explain(self, observation):
+        outlet = float(observation[1])
+        action = self.predict(observation)
+        condition = [f"≤ {self.lower_temperature:g}", f"inside {self.lower_temperature:g}–{self.warning_temperature:g}", f"≥ {self.warning_temperature:g}"][action]
+        return f"{outlet:.2f} °C {condition} °C → {('decrease','maintain','increase')[action]}"
 
