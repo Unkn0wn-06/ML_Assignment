@@ -20,7 +20,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--algorithm", choices=["baseline", "q_learning", "sarsa", "dqn", "ppo"], required=True)
-    parser.add_argument("--episodes", type=int, default=250)
+    parser.add_argument("--episodes", type=int, default=300)
     parser.add_argument("--timesteps", type=int, default=20_000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--evaluation-episodes", type=int, default=1)
@@ -40,7 +40,7 @@ def main() -> None:
     elif arguments.algorithm in {"q_learning", "sarsa"}:
         agent = train_tabular(env, data, algorithm=arguments.algorithm, episodes=arguments.episodes, bins=5, seed=arguments.seed)
         joblib.dump(agent, arguments.artifacts_dir / f"{arguments.algorithm}.joblib")
-        action_fn = lambda observation: agent.select_action(observation, explore=False)
+        action_fn = agent.predict
     else:
         trainer = train_dqn if arguments.algorithm == "dqn" else train_ppo
         agent = trainer(env, total_timesteps=arguments.timesteps, seed=arguments.seed)

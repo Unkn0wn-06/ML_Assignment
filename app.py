@@ -216,12 +216,18 @@ with st.sidebar:
     repetitions = st.slider("Episodes per scenario", 1, 10, 3)
     st.caption("TRAINING")
     with st.expander("Advanced tabular settings"):
+        legacy_state = st.selectbox("Tabular state", ["Safety state", "Legacy 5-bin state"]) == "Legacy 5-bin state"
+        training_options = dict(alpha=st.number_input("Alpha", .01, 1., .1), gamma=st.number_input("Gamma", 0., 1., .9),
+                                epsilon_start=st.number_input("Starting exploration", 0., 1., 1.),
+                                epsilon_end=st.number_input("Final exploration", 0., 1., .05),
+                                decay_fraction=st.number_input("Exploration decay fraction", .01, 1., .6),
+                                min_visits=st.number_input("Minimum trusted visits", 1, 1000, 10))
         legacy_termination = st.checkbox("Legacy termination")
         tie_margin = st.number_input(
             "Near-tie margin (reward units)", min_value=0.0, value=0.05, step=0.01
         )
         zero_initialisation = st.checkbox("Legacy zero initial Q-values")
-    tabular_episodes = st.slider("Tabular RL episodes", 25, 1_000, 250, 25)
+    tabular_episodes = st.slider("Tabular RL episodes", 25, 1_000, 300, 25)
     deep_timesteps = st.slider("Deep RL timesteps", 1_000, 100_000, 20_000, 1_000)
     trees = st.slider("Transition-model trees", 20, 200, 50, 10)
     seed = st.number_input("Random seed", min_value=0, value=42, step=1)
@@ -285,7 +291,7 @@ if run and data is not None:
                         repetitions,
                         tabular_episodes,
                         deep_timesteps,
-                        training_seed,
+                        training_seed, legacy_state, tuple(training_options.items()),
                         legacy_termination,
                         tie_margin,
                         zero_initialisation,
@@ -303,6 +309,7 @@ if run and data is not None:
                                 tabular_episodes=tabular_episodes,
                                 deep_timesteps=deep_timesteps,
                                 seed=training_seed,
+                                legacy_state=legacy_state, training_options=training_options,
                                 legacy_termination=legacy_termination,
                                 tie_margin=tie_margin,
                                 zero_initialisation=zero_initialisation,
@@ -611,6 +618,17 @@ with diagnostics_tab:
         st.caption(
             "In-sample errors are optimistic. Use the held-out split for report-quality assessment."
         )
+        tabular_rows = []
+        for name, result in results.items():
+            if "states_visited" in result.scenario_metrics:
+                per_seed = result.scenario_metrics.groupby("seed").first()
+                tabular_rows.append({"Controller": name, "States visited (seed mean)": per_seed.states_visited.mean(),
+                                     "Median trusted visits (seed mean)": per_seed.median_trusted_visits.mean(),
+                                     "Fallback decisions (%)": 100 * result.trajectories.fallback.mean(),
+                                     "Switching (%)": 100 * result.scenario_metrics.switching_rate.mean()})
+        if tabular_rows:
+            st.subheader("Tabular policy diagnostics")
+            st.dataframe(pd.DataFrame(tabular_rows), hide_index=True)
         if not context.held_out_scenarios:
             st.info(
                 "All scenarios uses the same rows for fitting and evaluation. Both MAE bars are identical by design."

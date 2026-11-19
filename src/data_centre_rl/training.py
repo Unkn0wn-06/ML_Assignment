@@ -8,7 +8,7 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
-from .tabular import Discretizer, TabularAgent
+from .tabular import Discretizer, SafetyStateEncoder, TabularAgent
 
 
 def fit_discretizer(data, bins: int = 5) -> Discretizer:
@@ -28,6 +28,13 @@ def train_tabular(
     bins: int,
     seed: int,
     progress_callback: ProgressCallback | None = None,
+    legacy_state: bool = False,
+    alpha: float = .1,
+    gamma: float = .9,
+    epsilon_start: float = 1.,
+    epsilon_end: float = .05,
+    decay_fraction: float = .6,
+    min_visits: int = 10,
     tie_margin: float = .05,
     zero_initialisation: bool = False,
     learning_callback: ProgressCallback | None = None,
@@ -38,11 +45,15 @@ def train_tabular(
     weights=env.reward_weights
     penalties=weights.energy*training_data.P_DC.clip(lower=0)+weights.pue*training_data.PUE.clip(lower=0)+weights.temperature*(training_data["Outlet Avg Temp"]-env.outlet_limit).clip(lower=0)**2
     initial=0. if zero_initialisation else -float(penalties.mean())
-    agent = TabularAgent(fit_discretizer(training_data, bins), seed=seed,tie_margin=tie_margin,initial_value=initial)
+    encoder = fit_discretizer(training_data, bins) if legacy_state else SafetyStateEncoder(env.outlet_limit, env.supply_bounds)
+    agent = TabularAgent(encoder, alpha=alpha, gamma=gamma, min_visits=min_visits, seed=seed,tie_margin=tie_margin,initial_value=initial)
     learning_records: list[dict[str, float | int]] = []
     for episode in range(episodes):
-        agent.epsilon = max(0.05, 1.0 - episode / max(1, episodes - 1) * 0.95)
+        agent.reset()
+        fraction = min(1., episode / max(1, round(episodes * decay_fraction) - 1))
+        agent.epsilon = epsilon_start + (epsilon_end - epsilon_start) * fraction
         observation, _ = env.reset(seed=seed + episode)
+        state = agent.encode(observation)
         action = agent.select_action(observation)
         terminated = truncated = False
         episode_reward = 0.0
@@ -50,19 +61,21 @@ def train_tabular(
             next_observation, reward, terminated, truncated, _ = env.step(action)
             episode_reward += reward
             done = terminated or truncated
+            next_state = agent.encode(next_observation)
             if algorithm == "q_learning":
-                agent.update_q_learning(observation, action, reward, next_observation, done)
+                agent.update_q_learning(state, action, reward, next_state, done)
                 next_action = agent.select_action(next_observation)
             else:
                 next_action = agent.select_action(next_observation)
-                agent.update_sarsa(observation, action, reward, next_observation, next_action, done)
-            observation, action = next_observation, next_action
+                agent.update_sarsa(state, action, reward, next_state, next_action, done)
+            state, action = next_state, next_action
         learning_records.append({"step": episode + 1, "reward": episode_reward})
         if progress_callback:
             progress_callback(episode + 1, episodes, episode_reward)
         if learning_callback:
             learning_callback(episode + 1, episodes, episode_reward)
     agent.epsilon = 0.0
+    agent.reset()
     agent.learning_curve = pd.DataFrame(learning_records)
     return agent
 

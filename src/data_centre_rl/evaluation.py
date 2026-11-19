@@ -31,6 +31,9 @@ def evaluate_policy(
     trajectory_records: list[dict[str, float | int | str | bool]] = []
     for scenario_index, scenario in enumerate(env.scenarios):
         for episode in range(episodes_per_scenario):
+            policy = getattr(action_fn, "__self__", action_fn)
+            if hasattr(policy, "reset"):
+                policy.reset()
             observation, initial = env.reset(
                 seed=seed + scenario_index * 100 + episode, options={"scenario": scenario}
             )
@@ -53,6 +56,7 @@ def evaluate_policy(
                             "start_row": initial.get("start_row"),
                             "horizon": env.episode_horizon,
                             "action": action,
+                            "fallback": getattr(policy, "fallback", False),
                             "decision_reason": reason or "n/a",
                             "reward": reward,
                             **info,

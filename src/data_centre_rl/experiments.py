@@ -140,6 +140,8 @@ def run_controller(
     deep_timesteps: int,
     seed: int,
     safe_starts: bool = True,
+    legacy_state: bool = False,
+    training_options: dict | None = None,
     legacy_termination: bool = False,
     termination_excess: float = 1.5,
     termination_penalty_per_step: float | None = None,
@@ -173,14 +175,14 @@ def run_controller(
             context.training_data,
             algorithm=algorithm,
             episodes=tabular_episodes,
-            bins=5,
+            bins=5, legacy_state=legacy_state, **(training_options or {}),
             tie_margin=tie_margin,
             zero_initialisation=zero_initialisation,
             seed=seed,
             progress_callback=progress_callback,
         )
         learning_curve = agent.learning_curve
-        action_fn = lambda observation: agent.select_action(observation, explore=False)
+        action_fn = agent.predict
     else:
         trainer = train_dqn if controller == "DQN" else train_ppo
         agent = trainer(
@@ -213,6 +215,11 @@ def run_controller(
     metrics["termination_penalty_per_step"] = train_env.termination_penalty_per_step
     metrics["legacy_termination"] = legacy_termination
     metrics["termination_excess"] = termination_excess
+    metrics["legacy_state"] = legacy_state
+    if controller in {"Q-Learning", "SARSA"}:
+        counts = pd.Series([v for counts in agent.visits.values() for v in counts])
+        metrics["states_visited"] = len(agent.visits)
+        metrics["median_trusted_visits"] = counts[counts >= agent.min_visits].median()
     metrics["seed"] = seed
     metrics["controller"] = controller
     trajectories = evaluation.trajectories.copy()
