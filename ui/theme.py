@@ -2,6 +2,7 @@
 
 CONTROLLER_COLOURS = {
     "Fixed setpoint": "#94a3b8",
+    "Rule-based (no hysteresis)": "#34d399",
     "Rule-based": "#38bdf8",
     "Q-Learning": "#a78bfa",
     "SARSA": "#f59e0b",

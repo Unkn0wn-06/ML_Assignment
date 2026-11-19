@@ -8,14 +8,14 @@ from time import perf_counter
 
 import pandas as pd
 
-from .baselines import FixedPolicy, RuleBasedPolicy
+from .baselines import FixedPolicy, RuleBasedPolicy, ThresholdPolicy
 from .data import TARGET_COLUMNS, make_transition_table, scenario_split
 from .environment import DataCenterCoolingEnv
 from .evaluation import EvaluationResult, evaluate_policy
 from .training import model_action, train_dqn, train_ppo, train_tabular
 from .transition_model import VARIANTS, TransitionModel
 
-CONTROLLERS = ("Fixed setpoint", "Rule-based", "Q-Learning", "SARSA", "DQN", "PPO")
+CONTROLLERS = ("Fixed setpoint", "Rule-based", "Q-Learning", "SARSA", "DQN", "PPO", "Rule-based (no hysteresis)")
 
 
 @dataclass
@@ -140,6 +140,8 @@ def run_controller(
     deep_timesteps: int,
     seed: int,
     safe_starts: bool = True,
+    release_band: float = .5,
+    min_hold_steps: int = 5,
     legacy_state: bool = False,
     training_options: dict | None = None,
     legacy_termination: bool = False,
@@ -155,7 +157,7 @@ def run_controller(
     train_env = _environment(
         context, outlet_limit=outlet_limit, horizon=horizon, training=True, safe_starts=safe_starts, legacy_termination=legacy_termination, termination_excess=termination_excess, termination_penalty_per_step=termination_penalty_per_step
     )
-    if not train_env.scenarios and controller not in {"Fixed setpoint", "Rule-based"}:
+    if not train_env.scenarios and controller not in {"Fixed setpoint", "Rule-based", "Rule-based (no hysteresis)"}:
         raise ValueError(f"No feasible training scenarios at {outlet_limit:g} °C.")
     started = perf_counter()
     learning_curve = pd.DataFrame(columns=["step", "reward"])
@@ -163,9 +165,12 @@ def run_controller(
     if controller == "Fixed setpoint":
         agent = FixedPolicy()
         action_fn = agent.predict
+    elif controller == "Rule-based (no hysteresis)":
+        agent = ThresholdPolicy(outlet_limit - 1, min(24, outlet_limit - 3))
+        action_fn = agent.predict
     elif controller == "Rule-based":
         agent = RuleBasedPolicy(
-            warning_temperature=outlet_limit - 1, lower_temperature=min(24, outlet_limit - 3)
+            warning=outlet_limit - 1, lower=min(24, outlet_limit - 3), release_band=release_band, min_hold_steps=min_hold_steps
         )
         action_fn = agent.predict
     elif controller in {"Q-Learning", "SARSA"}:

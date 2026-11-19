@@ -50,7 +50,7 @@ cached_context = st.cache_resource(show_spinner=False)(prepare_experiment)
 def enabled_controllers() -> tuple[list[str], list[str]]:
     if importlib.util.find_spec("stable_baselines3"):
         return list(CONTROLLERS), []
-    return list(CONTROLLERS[:4]), ["DQN", "PPO"]
+    return [name for name in CONTROLLERS if name not in {"DQN", "PPO"}], ["DQN", "PPO"]
 
 
 def summarise(results: dict[str, ControllerResult], data: pd.DataFrame) -> pd.DataFrame:
@@ -216,6 +216,8 @@ with st.sidebar:
     repetitions = st.slider("Episodes per scenario", 1, 10, 3)
     st.caption("TRAINING")
     with st.expander("Advanced tabular settings"):
+        release_band = st.number_input("Rule release band (°C)", 0., 2., .5)
+        min_hold_steps = st.number_input("Minimum hold steps", 1, 100, 5)
         legacy_state = st.selectbox("Tabular state", ["Safety state", "Legacy 5-bin state"]) == "Legacy 5-bin state"
         training_options = dict(alpha=st.number_input("Alpha", .01, 1., .1), gamma=st.number_input("Gamma", 0., 1., .9),
                                 epsilon_start=st.number_input("Starting exploration", 0., 1., 1.),
@@ -291,7 +293,7 @@ if run and data is not None:
                         repetitions,
                         tabular_episodes,
                         deep_timesteps,
-                        training_seed, legacy_state, tuple(training_options.items()),
+                        training_seed, release_band, min_hold_steps, legacy_state, tuple(training_options.items()),
                         legacy_termination,
                         tie_margin,
                         zero_initialisation,
@@ -309,6 +311,7 @@ if run and data is not None:
                                 tabular_episodes=tabular_episodes,
                                 deep_timesteps=deep_timesteps,
                                 seed=training_seed,
+                                release_band=release_band, min_hold_steps=min_hold_steps,
                                 legacy_state=legacy_state, training_options=training_options,
                                 legacy_termination=legacy_termination,
                                 tie_margin=tie_margin,
