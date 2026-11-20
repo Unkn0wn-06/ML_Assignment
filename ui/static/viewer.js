@@ -7,6 +7,7 @@ function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 function safetyReading(t){return t>data.limit?{icon:'!',label:'Limit exceeded',color:'#f87171'}:t>=data.warning?{icon:'!',label:'Warning band',color:'#fbbf24'}:{icon:'✓',label:'Within limit',color:'#34d399'};}
 let mode='3D',zone=null,pinned=null,timer=null,room;
 const row=()=>frames[+$('step').value];
+function rackName(index){return "Rack "+String.fromCharCode(65+Math.floor(index/10))+String(index%10+1).padStart(2,"0");}
 function selectZone(index,lock){if(lock)pinned=pinned===index?null:index;zone=index??pinned;update();}
 try{room=buildRoom($('room'),data,selectZone);}catch(error){$('room').innerHTML='<p class="fallback"><b>3D view unavailable</b><br>WebGL is unavailable. Use Loop or inspect the replay readings.</p>';}
 const loop=makeLoop($('loop'),data);
@@ -41,7 +42,7 @@ function update(){
    const delta=Number.isFinite(data.baseline[r.step])?format(r.CoP-data.baseline[r.step]):'—';
    content='<div class="tiles">'+tile('SYSTEM CoP',format(r.CoP)+sparks[0])+tile('P_DC · kW',format(r.P_DC)+sparks[1])+'</div>'+field('CoP Δ vs rule-based',delta)+field('PUE',format(r.PUE))+'<div class="group"><h4>Configurations</h4></div>'+configurations;
  }else{
-   $('title').textContent=zone===null?'Room inspector':'Zone '+(zone+1)+' · schematic';
+   $('title').textContent=zone===null?'Room inspector':rackName(zone)+' · schematic';
    room?.update(r,temperature,s);
    const cooling='Unavailable · cooling-only power is unmetered';
    content=field('Scenario',escapeHtml(data.scenario))+field('Step',r.step+' / '+data.horizon)+field('Controller',name)+field('Status','<span style="color:'+s.color+'">'+s.icon+' '+s.label+'</span>')+
@@ -53,7 +54,7 @@ function update(){
    detail('Policy & decisions',decision+' · lower '+data.lower+' °C · warning '+data.warning+' °C')+
    detail('Alerts',s.icon+' '+s.label)+detail('Episode summary',escapeHtml(data.reason)+' · '+(frames.length-1)+' / '+data.horizon+' steps · '+data.switches+' switches · '+data.clipped+' clipped steps');
    $('zone').hidden=zone===null;
-   if(zone!==null)$('zone').innerHTML='<b>Zone '+(zone+1)+' · schematic average</b><br>Outlet '+format(r.outlet_temperature)+' °C · supply '+format(r.proposed_supply)+' °C<br>IT '+format(r.P_IT)+' kW · facility '+format(r.P_DC)+' kW<br>Cooling-only power unmetered';
+   if(zone!==null)$('zone').innerHTML='<b>'+rackName(zone)+' · schematic average</b><br>Outlet '+format(r.outlet_temperature)+' °C · supply '+format(r.proposed_supply)+' °C<br>IT '+format(r.P_IT)+' kW · facility '+format(r.P_DC)+' kW<br>Cooling-only power unmetered';
  }
  if(compare)content='<div class="group" id="peer"><h4>'+escapeHtml(data.other)+' · matched step</h4>'+(peer?'Outlet '+format(peer.outlet_temperature)+' °C · supply '+format(peer.proposed_supply)+' °C · '+format(peer.P_DC)+' kW<br>'+escapeHtml(peer.decision_reason):'Comparison episode ended')+'</div>'+content;
  $('info').innerHTML=content;

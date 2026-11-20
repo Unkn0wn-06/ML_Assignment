@@ -23,13 +23,13 @@ function buildRoom(root, payload, selectZone) {
     #include <colorspace_fragment>
     }`
   }),count);
-  const anchors=[], offsets=[];let random=payload.seed>>>0;
+  const markedRacks=[3,16,24,38], anchors=[], offsets=[];let random=payload.seed>>>0;
   for(let i=0;i<count;i++){
     const row=Math.floor(i/10),x=(i%10-4.5)*.96,z=[-3,-1.35,1.35,3][row];
     transform.position.set(x,1.1,z);transform.scale.set(.89,2.2,.9);transform.updateMatrix();
     racks.setMatrixAt(i,transform.matrix);racks.setColorAt(i,color.set('#38bdf8'));
     random=(Math.imul(random,1664525)+1013904223)>>>0;offsets.push((random/4294967296-.5)*1.2);
-    if([3,16,24,38].includes(i))anchors.push(new T.Vector3(x,2.5,z));
+    if(markedRacks.includes(i))anchors.push(new T.Vector3(x,2.5,z));
   }
   scene.add(racks);
   for(const z of [-2.8,2.8]){
@@ -40,8 +40,8 @@ function buildRoom(root, payload, selectZone) {
   if(payload.config.includes('Plate'))box(9.8,.08,1.8,0,2.48,0,'#8bb5c5',.24);
   if(payload.config.includes('Wall'))box(.08,2.45,2.3,-4.96,1.23,0,'#86a3b2',.45);
   const markers=document.getElementById('markers'), pins=anchors.map((p,i)=>{
-    const btn=document.createElement('button');btn.className='pin';btn.title='Inspect schematic zone '+(i+1);
-    btn.onclick=()=>selectZone(i,true);btn.onmouseenter=()=>selectZone(i,false);btn.onmouseleave=()=>selectZone(null,false);
+    const btn=document.createElement('button');btn.className='pin';btn.title='Inspect '+rackName(markedRacks[i]);
+    btn.onclick=()=>selectZone(markedRacks[i],true);btn.onmouseenter=()=>selectZone(markedRacks[i],false);btn.onmouseleave=()=>selectZone(null,false);
     markers.append(btn);return btn;
   });
   function draw(){
@@ -54,13 +54,30 @@ function buildRoom(root, payload, selectZone) {
     anchors.forEach((pos,i)=>{const p=pos.clone().project(camera);pins[i].style.left=((p.x+1)*50)+'%';pins[i].style.top=((1-p.y)*50)+'%';});
   }
   const canvas=renderer.domElement;
+  const raycaster=new T.Raycaster(), pointer=new T.Vector2();
+  let hovered=null;
+  function hover(id){
+    if(id===hovered)return;
+    hovered=id;
+    canvas.style.cursor=id===null?'grab':'pointer';
+    selectZone(id,false);
+  }
+  function pick(event){
+    const bounds=canvas.getBoundingClientRect();
+    pointer.set(2*(event.clientX-bounds.left)/bounds.width-1,1-2*(event.clientY-bounds.top)/bounds.height);
+    raycaster.setFromCamera(pointer,camera);
+    hover(raycaster.intersectObject(racks,false)[0]?.instanceId ?? null);
+  }
+  canvas.onpointerleave=()=>hover(null);
   canvas.onpointerdown=e=>canvas.setPointerCapture(e.pointerId);
   // During continuous interaction, reduce the backing buffer on slow devices.
   // DOM markers stay at native resolution. Restore the full frame when the drag settles.
   let previousMove=0;
   function restore(){previousMove=0;renderer.setPixelRatio(nativeRatio);draw();}
   canvas.onpointerup=canvas.onpointercancel=restore;
-  canvas.onpointermove=e=>{if(e.buttons===1&&!plan){
+  canvas.onpointermove=e=>{if(!e.buttons){pick(e);return;}
+    hover(null);
+    if(e.buttons===1&&!plan){
     const now=performance.now();
     if(previousMove && now-previousMove>32 && renderer.getPixelRatio()>.4){
       renderer.setPixelRatio(Math.max(.4,renderer.getPixelRatio()*.65));
