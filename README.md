@@ -51,7 +51,7 @@ python -m streamlit run app.py
 
 In the sidebar, select one or more controllers, a scenario split, outlet limit, episode settings, and a seed, then select **Run experiment**. Results stay in the current dashboard session, so changing a chart filter does not retrain controllers.
 
-- **Overview:** safety and efficiency KPIs, 16-scenario heatmap, episode replay, controller trade-off scatter, transition-model PUE surface, and a schematic AAU-average server-room replay.
+- **Viewer:** select the controller, seed, scenario, episode and comparison partner above the room. Expand **Run metrics and analysis charts** for the KPIs, scenario heatmap, three-row replay, controller trade-offs and PUE surface.
 - **Compare controllers:** physical metrics alongside reward, action distributions, learning curves, paired savings against the rule-based baseline, and CSV downloads.
 - **Model diagnostics:** predicted-versus-actual plots, in-sample/evaluation MAE, scenario error heatmap, feature importances, and proposed-supply clipping count.
 - **Source data:** dataset-quality KPIs, filtered AAU data export, supply-versus-load inspection, and time-series preview.
@@ -64,7 +64,19 @@ The default limit is 29 °C with a 28 °C warning. This is an assignment assumpt
 
 For generalisation results, hold out the 100% loads or one configuration. In **All scenarios**, both error series use the fitting rows. The sensitivity bars perturb each evaluated scenario's median state by ±0.5 °C, bounded to the training range. Small responses indicate limited opportunity for simulated optimisation. Paired savings compare mean power on matched full-horizon episodes and include the difference in violation probability. Increase consecutive seeds to display training variability.
 
-[Overview](docs/ui/overview-2800.png) · [Controller comparison](docs/ui/compare-controllers-2800.png) · [Model diagnostics](docs/ui/model-diagnostics-2800.png) · [Source data](docs/ui/source-data-2800.png). Each view also has a 1600 × 1000 capture in the same folder. To repeat the captures on Windows with Edge installed, install Playwright and run `python scripts/capture_dashboard.py` from the project folder.
+### Using the viewer
+
+Choose **3D** to orbit the room by dragging and zoom with the wheel. **Plan** looks straight down on the same equipment. Select a zone marker to pin its schematic readings. The left rail resets the camera, hides the legends or opens the inspector. On narrow screens the inspector opens as a drawer.
+
+**Loop** follows the blue supply and red return circuits. Temperature labels track the selected step. The histogram uses observed AAU rows from the selected scenario. Configuration summaries pool the selected controller's evaluated episodes across loads and seeds. A missing configuration is labelled explicitly.
+
+Scrub from step zero (the recorded initial state) to the last executed step. The end chip gives the requested horizon. Play animates the readings at the selected speed. Switch on **Compare** to inspect the other controller at the same scenario, initial row, seed and step. The inspector marks where a shorter comparison episode ends.
+
+Rack placement, gradients and zone markers are schematic. Every zone displays the same underlying readings. AAU provides IT and total facility power; it does not separately meter cooling power.
+
+**1600 × 900 views** · [3D viewer](docs/ui/viewer-3d.png) · [Plan](docs/ui/viewer-plan.png) · [Cooling loop](docs/ui/viewer-loop.png) · [Compare](docs/ui/compare-900.png) · [Diagnostics](docs/ui/diagnostics-900.png) · [Source data](docs/ui/source-data-900.png). To repeat the captures on Windows with Edge and Playwright installed, run `python scripts/capture_dashboard.py`. The three viewer captures show the component at full viewport width. The other captures include the Streamlit experiment controls.
+
+The design uses the same light room and dark loop as the previews. Plan shares the room geometry and camera controls. The inspector uses real scenario-wide readings, and the configuration list counts evaluated episodes. Streamlit keeps its navigation above the component so Compare, Diagnostics and Source data retain their filters and downloads. The six captures use seed 42.
 
 ### Episode and simulator comparison
 
