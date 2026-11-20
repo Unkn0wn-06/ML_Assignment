@@ -186,6 +186,7 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
         self._last_action = action
         truncated = bool(self._steps >= self.episode_horizon or self._index >= len(self._frame) - 1)
         info = self._info(prediction)
+        info.update({key: self._state[key] for key in ("Inlet Temp Avg", "P_IT")})
         info.update(components)
         info.update(
             terminated=terminated,
