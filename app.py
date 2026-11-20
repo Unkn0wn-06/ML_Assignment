@@ -388,41 +388,9 @@ with overview_tab:
             "Run one or more controllers from the Experiment panel to populate this control-room overview."
         )
     else:
-        selectors = st.columns(3)
-        controller = selectors[0].selectbox("Overview controller", list(results))
+        selectors = st.columns([1, 0.65, 1.5, 0.65, 1])
+        controller = selectors[0].selectbox("Viewer controller", list(results))
         selected = summary.loc[summary["controller"] == controller]
-        status, status_class = safety_status(
-            selected["max_outlet_temperature"].max(), st.session_state["outlet_limit"]
-        )
-        columns = st.columns(6)
-        columns[5].metric(
-            "Steps survived",
-            f"{selected.steps_survived.mean():.1f}",
-            help=f"Mean executed steps out of {int(selected.horizon.iloc[0])}.",
-        )
-        columns[0].metric(
-            "Mean P_DC (kW)",
-            f"{selected['mean_p_dc'].mean():.3f}",
-            delta(summary, controller, "mean_p_dc"),
-        )
-        columns[1].metric(
-            "Mean PUE", f"{selected['mean_pue'].mean():.2f}", delta(summary, controller, "mean_pue")
-        )
-        columns[2].metric(
-            "Mean outlet",
-            f"{selected['mean_outlet_temperature'].mean():.1f} °C",
-            delta(summary, controller, "mean_outlet_temperature"),
-        )
-        columns[3].metric(
-            "Episodes violated",
-            f"{selected['episode_violation_rate'].mean():.1%}",
-            delta(summary, controller, "episode_violation_rate"),
-            help="Share of episodes with any outlet temperature above the limit.",
-        )
-        columns[4].metric(
-            "Safety status",
-            {"GREEN": "🟢", "AMBER": "🟠", "RED": "🔴"}[status] + " " + status.title(),
-        )
         trajectory = results[controller].trajectories
         replay_seed = (
             selectors[1].selectbox("Replay seed", sorted(trajectory.seed.unique()))
@@ -447,13 +415,13 @@ with overview_tab:
             .hot.mean()
         )
         scenarios = sorted(trajectory.scenario.unique())
-        scenario = selectors[1].selectbox(
+        scenario = selectors[2].selectbox(
             "Replay scenario",
             scenarios,
             index=scenarios.index(default_scenario),
             format_func=lambda name: f"{name} · {'stressed' if stress[name] > 0.1 else 'calm'}",
         )
-        episode = selectors[2].selectbox(
+        episode = selectors[3].selectbox(
             "Replay episode",
             sorted(trajectory.loc[trajectory["scenario"] == scenario, "episode"].unique()),
             index=int(default_episode) if scenario == default_scenario else 0,
@@ -461,94 +429,123 @@ with overview_tab:
         replay = trajectory.loc[
             (trajectory["scenario"] == scenario) & (trajectory["episode"] == episode)
         ]
-        room_column, surface_column = st.columns([1.3, 1])
-        with card(
-            surface_column,
-            "Transition surface",
-            "Predicted PUE at the chosen outlet temperature; dots are observed AAU rows.",
-        ):
-            config_slot, outlet_slot = st.columns(2)
-            configuration = config_slot.selectbox(
-                "Surface configuration", sorted(context.training_data["configuration"].unique())
+        outcome = selected.loc[
+            (selected.scenario == scenario)
+            & (selected.episode == episode)
+            & (selected.seed == replay_seed)
+        ].iloc[0]
+        other = selectors[4].selectbox(
+            "Compare with", [name for name in results if name != controller] or ["None"]
+        )
+        comparison = None
+        if other != "None":
+            traces = results[other].trajectories
+            comparison = traces.loc[
+                (traces.scenario == scenario)
+                & (traces.episode == episode)
+                & (traces.seed == replay_seed)
+                & (traces.start_row == outcome.start_row)
+            ]
+        render_room(replay, comparison, results, selected, context.evaluation_data,
+                    outcome, st.session_state["outlet_limit"])
+        with st.expander("Run metrics and analysis charts"):
+            status, status_class = safety_status(
+                selected["max_outlet_temperature"].max(), st.session_state["outlet_limit"]
             )
-            surface_outlet = outlet_slot.slider(
-                "Surface outlet temperature (°C)", 15.0, 35.0, 25.0, 0.5
+            columns = st.columns(6)
+            columns[5].metric(
+                "Steps survived",
+                f"{selected.steps_survived.mean():.1f}",
+                help=f"Mean executed steps out of {int(selected.horizon.iloc[0])}.",
             )
-            st.plotly_chart(pue_surface(context, configuration, surface_outlet), width="stretch")
-        with card(room_column, "Server room", "Replay of simulated average outlet temperature."):
-            configuration = context.evaluation_data.loc[
-                context.evaluation_data["scenario"] == scenario, "configuration"
-            ].iloc[0]
-            render_room(replay, configuration)
-        heat, trade = st.columns(2)
-        with card(heat, "Scenario map", "Grey n/a cells have no evaluated steps."):
-            metric = st.selectbox(
-                "Metric", ["episode_violation_rate", "mean_steps_survived", "mean_p_dc", "mean_pue"]
+            columns[0].metric(
+                "Mean P_DC (kW)",
+                f"{selected['mean_p_dc'].mean():.3f}",
+                delta(summary, controller, "mean_p_dc"),
             )
-            st.plotly_chart(scenario_heatmap(selected, metric, context.held_out_scenarios))
-        with card(
-            trade,
-            "Controller trade-offs",
-            "Bars span one standard deviation across seeds. Marker size shows switching rate.",
-        ):
-            seeds = summary.groupby(["controller", "seed"])[
-                ["mean_p_dc", "episode_violation_rate", "switching_rate"]
-            ].mean()
-            points = seeds.groupby(level=0).mean()
-            spread = seeds.groupby(level=0).std().fillna(0)
-            zoom = st.checkbox("Zoom to controllers", value=True)
-            figure = go.Figure()
-            for i, (name, point) in enumerate(points.iterrows()):
-                figure.add_scatter(
-                    x=[point.mean_p_dc],
-                    y=[point.episode_violation_rate],
-                    mode="markers",
-                    name=name,
-                    marker={
-                        "size": 9 + 30 * point.switching_rate,
-                        "color": CONTROLLER_COLOURS[name],
-                    },
-                    error_x={"array": [spread.loc[name, "mean_p_dc"]]},
-                    error_y={"array": [spread.loc[name, "episode_violation_rate"]]},
+            columns[1].metric(
+                "Mean PUE", f"{selected['mean_pue'].mean():.2f}", delta(summary, controller, "mean_pue")
+            )
+            columns[2].metric(
+                "Mean outlet",
+                f"{selected['mean_outlet_temperature'].mean():.1f} °C",
+                delta(summary, controller, "mean_outlet_temperature"),
+            )
+            columns[3].metric(
+                "Episodes violated",
+                f"{selected['episode_violation_rate'].mean():.1%}",
+                delta(summary, controller, "episode_violation_rate"),
+                help="Share of episodes with any outlet temperature above the limit.",
+            )
+            columns[4].metric(
+                "Safety status",
+                {"GREEN": "🟢", "AMBER": "🟠", "RED": "🔴"}[status] + " " + status.title(),
+            )
+            with card(
+                st,
+                "Transition surface",
+                "Predicted PUE at the chosen outlet temperature; dots are observed AAU rows.",
+            ):
+                config_slot, outlet_slot = st.columns(2)
+                configuration = config_slot.selectbox(
+                    "Surface configuration", sorted(context.training_data["configuration"].unique())
                 )
-                figure.add_annotation(
-                    x=point.mean_p_dc,
-                    y=point.episode_violation_rate,
-                    text=name,
-                    ax=35 if i % 2 else -35,
-                    ay=(-1) ** i * (20 + 8 * i),
-                    arrowhead=0,
+                surface_outlet = outlet_slot.slider(
+                    "Surface outlet temperature (°C)", 15.0, 35.0, 25.0, 0.5
                 )
-            figure.update_xaxes(title="Mean power (kW)", rangemode="normal" if zoom else "tozero")
-            figure.update_yaxes(
-                title="Episodes with any violation",
-                tickformat=".0%",
-                rangemode="normal" if zoom else "tozero",
-            )
-            figure.update_layout(showlegend=False)
-            st.plotly_chart(dark_layout(figure))
-        with card(st, "Episode replay", "Warning band starts 1 °C below the limit."):
-            outcome = selected.loc[
-                (selected.scenario == scenario)
-                & (selected.episode == episode)
-                & (selected.seed == replay_seed)
-            ].iloc[0]
-            st.caption(
-                f"{scenario} · {controller} · start row {outcome.start_row} · {outcome.steps_survived}/{outcome.horizon} steps · {outcome.end_reason} · {int(replay.action.diff().dropna().ne(0).sum())} switches · {int(replay.supply_clipped.sum())} clipped"
-            )
-            other = st.selectbox(
-                "Compare with", ["None", *[name for name in results if name != controller]]
-            )
-            comparison = None
-            if other != "None":
-                traces = results[other].trajectories
-                comparison = traces.loc[
-                    (traces.scenario == scenario)
-                    & (traces.episode == episode)
-                    & (traces.seed == replay_seed)
-                    & (traces.start_row == outcome.start_row)
-                ]
-            st.plotly_chart(replay_chart(replay, st.session_state["outlet_limit"], comparison))
+                st.plotly_chart(pue_surface(context, configuration, surface_outlet), width="stretch")
+            heat, trade = st.columns(2)
+            with card(heat, "Scenario map", "Grey n/a cells have no evaluated steps."):
+                metric = st.selectbox(
+                    "Metric", ["episode_violation_rate", "mean_steps_survived", "mean_p_dc", "mean_pue"]
+                )
+                st.plotly_chart(scenario_heatmap(selected, metric, context.held_out_scenarios))
+            with card(
+                trade,
+                "Controller trade-offs",
+                "Bars span one standard deviation across seeds. Marker size shows switching rate.",
+            ):
+                seeds = summary.groupby(["controller", "seed"])[
+                    ["mean_p_dc", "episode_violation_rate", "switching_rate"]
+                ].mean()
+                points = seeds.groupby(level=0).mean()
+                spread = seeds.groupby(level=0).std().fillna(0)
+                zoom = st.checkbox("Zoom to controllers", value=True)
+                figure = go.Figure()
+                for i, (name, point) in enumerate(points.iterrows()):
+                    figure.add_scatter(
+                        x=[point.mean_p_dc],
+                        y=[point.episode_violation_rate],
+                        mode="markers",
+                        name=name,
+                        marker={
+                            "size": 9 + 30 * point.switching_rate,
+                            "color": CONTROLLER_COLOURS[name],
+                        },
+                        error_x={"array": [spread.loc[name, "mean_p_dc"]]},
+                        error_y={"array": [spread.loc[name, "episode_violation_rate"]]},
+                    )
+                    figure.add_annotation(
+                        x=point.mean_p_dc,
+                        y=point.episode_violation_rate,
+                        text=name,
+                        ax=35 if i % 2 else -35,
+                        ay=(-1) ** i * (20 + 8 * i),
+                        arrowhead=0,
+                    )
+                figure.update_xaxes(title="Mean power (kW)", rangemode="normal" if zoom else "tozero")
+                figure.update_yaxes(
+                    title="Episodes with any violation",
+                    tickformat=".0%",
+                    rangemode="normal" if zoom else "tozero",
+                )
+                figure.update_layout(showlegend=False)
+                st.plotly_chart(dark_layout(figure))
+            with card(st, "Episode replay", "Warning band starts 1 °C below the limit."):
+                st.caption(
+                    f"{scenario} · {controller} · start row {outcome.start_row} · {outcome.steps_survived}/{outcome.horizon} steps · {outcome.end_reason} · {int(replay.action.diff().dropna().ne(0).sum())} switches · {int(replay.supply_clipped.sum())} clipped"
+                )
+                st.plotly_chart(replay_chart(replay, st.session_state["outlet_limit"], comparison))
 
 with compare_tab:
     if not summary.empty and (summary.legacy_termination.any() or summary.legacy_state.any()):
