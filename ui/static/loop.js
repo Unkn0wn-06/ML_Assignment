@@ -16,7 +16,7 @@ function makeLoop(host,data){
   }
   for(const [x,z] of [[5,1],[13,5]])equipment+=block(x,z,.9,.9,.8,'#ccd8e6');
   const max=Math.max(...data.histogram,1);
-  data.histogram.forEach((n,i)=>{equipment+=block(2+i*.48,5,.42,1.65,2.8*n/max,'#83bbff','#4177b5','#5b9bff');});
+  data.histogram.forEach((n,i)=>{equipment+='<g><title>'+format(data.edges[i],1)+'–'+format(data.edges[i+1],1)+' °C: '+n+' rows</title>'+block(2+i*.48,5,.42,1.65,2.8*n/max,'#83bbff','#4177b5','#5b9bff')+'</g>';});
   for(let i=0;i<3;i++)equipment+=block(10,8+i*1.7,3,1.55,1.9,'#facc15','#a8b1c1','#798497',true);
   const labels=[
     ['Cooling supply','proposed_supply',785,125,[9,1],'#78adff'],
@@ -27,7 +27,7 @@ function makeLoop(host,data){
   const sensors=labels.map(([label,key,x,y,anchor,color],i)=>{
     const [ax,ay]=point(...anchor);return '<path d="M'+x+' '+(y+29)+' L'+ax+' '+ay+'" stroke="#b3c2d9" fill="none"/><circle cx="'+ax+'" cy="'+ay+'" r="5" fill="'+color+'"/><text x="'+x+'" y="'+y+'" fill="'+color+'" font-size="23" font-weight="700" id="sensor'+i+'"></text><text x="'+x+'" y="'+(y+21)+'" fill="#d3deef" font-size="13">'+label+'</text>';
   }).join('');
-  host.innerHTML='<svg viewBox="0 0 980 660" preserveAspectRatio="xMidYMid meet" aria-label="Schematic cooling loop"><g>'+grid+equipment+'</g><g text-anchor="middle">'+sensors+'<text x="450" y="130" fill="#e8eefb">Cooling units</text><text x="345" y="430" fill="#c9d9f2">Outlet distribution</text><text x="345" y="449" font-size="12" fill="#c9d9f2">'+data.histogram.reduce((a,b)=>a+b,0)+' AAU samples</text><text x="455" y="580" fill="#e8eefb">Rack hall · '+escapeHtml(data.config)+'</text></g></svg>';
+  host.innerHTML='<svg viewBox="0 0 980 660" preserveAspectRatio="xMidYMid meet" aria-label="Schematic cooling loop"><g>'+grid+equipment+'</g><g text-anchor="middle">'+sensors+'<text x="380" y="98" fill="#e8eefb">Cooling units</text><text x="265" y="456" fill="#c9d9f2">Outlet distribution</text><text x="265" y="476" font-size="12" fill="#c9d9f2">'+data.histogram.reduce((a,b)=>a+b,0)+' AAU samples</text><text x="455" y="580" fill="#e8eefb">Rack hall · '+escapeHtml(data.config)+'</text></g></svg>';
   return (row,ramp)=>{labels.forEach(([,key],i)=>document.getElementById('sensor'+i).textContent=format(row[key],1)+' °C');
     host.querySelectorAll('.hallTop').forEach(el=>el.setAttribute('fill',ramp(row.outlet_temperature)));};
 }

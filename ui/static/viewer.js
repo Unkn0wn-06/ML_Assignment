@@ -1,12 +1,12 @@
 const $=id=>document.getElementById(id);
 const data=JSON.parse($('payload').textContent), frames=data.frames;
-const palette=['#1d2a73','#2f6fe4','#38bdf8','#4ade80','#facc15','#fb923c','#ef4444'];
+const palette=data.temperatureRamp;
 function temperature(t){return palette[t>data.limit?6:Math.max(0,Math.min(5,Math.floor(t-data.limit+6)))];}
 function format(v,d=2){return Number.isFinite(v)?v.toFixed(d):'—';}
 function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function status(t){return t>data.limit?{icon:'!',label:'Limit exceeded',color:'#f87171'}:t>=data.warning?{icon:'!',label:'Warning band',color:'#fbbf24'}:{icon:'✓',label:'Within limit',color:'#34d399'};}
+function safetyReading(t){return t>data.limit?{icon:'!',label:'Limit exceeded',color:'#f87171'}:t>=data.warning?{icon:'!',label:'Warning band',color:'#fbbf24'}:{icon:'✓',label:'Within limit',color:'#34d399'};}
 let mode='3D',zone=null,pinned=null,timer=null,room;
-const row=()=>frames[+$('step').value], actions=['Decrease','Maintain','Increase'];
+const row=()=>frames[+$('step').value];
 function selectZone(index,lock){if(lock)pinned=pinned===index?null:index;zone=index??pinned;update();}
 try{room=buildRoom($('room'),data,selectZone);}catch(error){$('room').innerHTML='<p class="fallback"><b>3D view unavailable</b><br>WebGL is unavailable. Use Loop or inspect the replay readings.</p>';}
 const loop=makeLoop($('loop'),data);
@@ -30,7 +30,7 @@ function setLegend(){
     band('Margin (°C)',['&gt; 4','2–4','1–2','0.5–1','0–0.5','&lt; 0'],['#2f6fe4','#4ade80','#a3e635','#facc15','#fb923c','#ef4444']);
 }
 function update(){
- const r=row(), s=status(r.outlet_temperature),margin=limit-r.outlet_temperature;
+ const r=row(), s=safetyReading(r.outlet_temperature),margin=limit-r.outlet_temperature;
  const compare=$('compare').checked,peer=compare?data.comparison.find(o=>o.step===r.step):null;
  const decision=escapeHtml(r.decision_reason),cfg=escapeHtml(data.config),name=escapeHtml(data.controller);
  $('meta').innerHTML='<b>AAU · '+cfg+' · '+format(data.load,0)+'% load</b><small>'+name+' · seed '+data.seed+' · step '+r.step+'</small>';
@@ -45,7 +45,7 @@ function update(){
    room?.update(r,temperature,s);
    const cooling='Unavailable · cooling-only power is unmetered';
    content=field('Scenario',escapeHtml(data.scenario))+field('Step',r.step+' / '+data.horizon)+field('Controller',name)+field('Status','<span style="color:'+s.color+'">'+s.icon+' '+s.label+'</span>')+
-   '<div class="tiles">'+tile('Outlet °C',format(r.outlet_temperature,1), '#e8eefb')+tile('Supply °C',format(r.proposed_supply,1),'#76bbff')+tile('P_DC kW',format(r.P_DC))+'</div>'+
+   '<div class="tiles">'+tile('Outlet °C','<i class="sw" style="background:'+temperature(r.outlet_temperature)+'"></i>'+format(r.outlet_temperature,1))+tile('Supply °C',format(r.proposed_supply,1),'#76bbff')+tile('P_DC kW',format(r.P_DC))+'</div>'+
    progress('Margin to '+limit+' °C',margin,Math.max(5,margin),format(margin,2)+' °C')+progress('PUE',r.PUE,Math.max(...frames.map(f=>f.PUE)),format(r.PUE))+
    field('Decision',decision)+'<div class="group"><button id="toLoop">View cooling loop</button></div>'+
    detail('Readings','Inlet '+format(r['Inlet Temp Avg'])+' °C · return '+format(r['Cooling Return Average'])+' °C')+

@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from .theme import CONTROLLER_COLOURS
+from .theme import CONTROLLER_COLOURS, TEMPERATURE_RAMP
 
 
 def dark_layout(figure: go.Figure, *, height: int = 360) -> go.Figure:
@@ -22,7 +22,9 @@ def dark_layout(figure: go.Figure, *, height: int = 360) -> go.Figure:
     return figure
 
 
-def scenario_heatmap(summary: pd.DataFrame, metric: str, held_out: set[str]) -> go.Figure:
+def scenario_heatmap(
+    summary: pd.DataFrame, metric: str, held_out: set[str], limit: float = 29.0
+) -> go.Figure:
     loads = [25, 50, 75, 100]
     configs = ["Baseline", "Plate", "PlateWall", "Wall"]
     values = summary.pivot_table(
@@ -44,7 +46,13 @@ def scenario_heatmap(summary: pd.DataFrame, metric: str, held_out: set[str]) -> 
             z=values.to_numpy(),
             x=list(range(4)),
             y=list(range(4)),
-            colorscale=[[0, "#26334b"], [0.01, "#156078"], [0.4, "#32a7a9"], [1, "#dfc45a"]],
+            colorscale=[
+                [point, color]
+                for i, color in enumerate(TEMPERATURE_RAMP)
+                for point in (i / 7, (i + 1) / 7)
+            ],
+            zmin=limit - 6 if metric == "mean_outlet_temperature" else 0,
+            zmax=limit + 1 if metric == "mean_outlet_temperature" else None,
             showscale=False,
             customdata=summary.pivot_table(
                 index="configuration", columns="load_percent", values="mean_steps_survived"

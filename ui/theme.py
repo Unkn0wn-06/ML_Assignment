@@ -1,5 +1,7 @@
 """Shared dashboard colours and Streamlit styling."""
 
+TEMPERATURE_RAMP = ["#1d2a73", "#2f6fe4", "#38bdf8", "#4ade80", "#facc15", "#fb923c", "#ef4444"]
+
 CONTROLLER_COLOURS = {
     "Fixed setpoint": "#94a3b8",
     "Rule-based (no hysteresis)": "#34d399",

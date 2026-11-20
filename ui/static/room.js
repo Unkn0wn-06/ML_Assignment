@@ -1,6 +1,7 @@
 function buildRoom(root, payload, selectZone) {
-  const T=THREE, scene=new T.Scene(), renderer=new T.WebGLRenderer({antialias:true,alpha:false});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); root.append(renderer.domElement);
+  const T=THREE, scene=new T.Scene(), renderer=new T.WebGLRenderer({antialias:false,alpha:false,powerPreference:"high-performance"});
+  const nativeRatio=Math.min(devicePixelRatio,1.5);
+  renderer.setPixelRatio(nativeRatio); root.append(renderer.domElement);
   scene.background=new T.Color('#dfe4ea');
   const camera=new T.OrthographicCamera(-10,10,8,-8,.1,150);
   let yaw=.75, pitch=.52, zoom=1, plan=false, active=true;
@@ -46,7 +47,7 @@ function buildRoom(root, payload, selectZone) {
   function draw(){
     if(!active)return;
     const w=root.clientWidth,h=root.clientHeight;if(!w||!h)return;
-    const half=Math.max(4.4,6.6*h/w)/zoom;
+    const half=Math.max(5.1,7.3*h/w)/zoom;
     camera.left=-half*w/h;camera.right=-camera.left;camera.top=half;camera.bottom=-half;
     camera.position.set(plan?0:21*Math.cos(pitch)*Math.sin(yaw),plan?22:21*Math.sin(pitch),plan?.001:21*Math.cos(pitch)*Math.cos(yaw));
     camera.lookAt(0,1,0);camera.updateProjectionMatrix();camera.updateMatrixWorld();renderer.render(scene,camera);
@@ -54,7 +55,19 @@ function buildRoom(root, payload, selectZone) {
   }
   const canvas=renderer.domElement;
   canvas.onpointerdown=e=>canvas.setPointerCapture(e.pointerId);
-  canvas.onpointermove=e=>{if(e.buttons===1&&!plan){yaw-=e.movementX*.008;pitch=Math.max(.15,Math.min(1.4,pitch+e.movementY*.007));draw();}};
+  // During continuous interaction, reduce the backing buffer on slow devices.
+  // DOM markers stay at native resolution. Restore the full frame when the drag settles.
+  let previousMove=0;
+  function restore(){previousMove=0;renderer.setPixelRatio(nativeRatio);draw();}
+  canvas.onpointerup=canvas.onpointercancel=restore;
+  canvas.onpointermove=e=>{if(e.buttons===1&&!plan){
+    const now=performance.now();
+    if(previousMove && now-previousMove>32 && renderer.getPixelRatio()>.4){
+      renderer.setPixelRatio(Math.max(.4,renderer.getPixelRatio()*.65));
+    }
+    previousMove=now;
+
+    yaw-=e.movementX*.008;pitch=Math.max(.15,Math.min(1.4,pitch+e.movementY*.007));draw();}};
   canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.55,Math.min(2.8,zoom*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
   new ResizeObserver(()=>{renderer.setSize(root.clientWidth,root.clientHeight,false);draw();}).observe(root);
   return {mode(value){plan=value==='PLAN';active=value!=='LOOP';draw();},home(){yaw=.75;pitch=.52;zoom=1;draw();},

@@ -31,7 +31,7 @@ from ui.charts import (
     scenario_heatmap,
 )
 from ui.room3d import render_room
-from ui.theme import CONTROLLER_COLOURS, apply_control_room_theme, card
+from ui.theme import CONTROLLER_COLOURS, TEMPERATURE_RAMP, apply_control_room_theme, card
 
 st.set_page_config(page_title="Cooling RL", page_icon="❄️", layout="wide")
 apply_control_room_theme(st)
@@ -446,8 +446,15 @@ with overview_tab:
                 & (traces.seed == replay_seed)
                 & (traces.start_row == outcome.start_row)
             ]
-        render_room(replay, comparison, results, selected, context.evaluation_data,
-                    outcome, st.session_state["outlet_limit"])
+        render_room(
+            replay,
+            comparison,
+            results,
+            selected,
+            context.evaluation_data,
+            outcome,
+            st.session_state["outlet_limit"],
+        )
         with st.expander("Run metrics and analysis charts"):
             status, status_class = safety_status(
                 selected["max_outlet_temperature"].max(), st.session_state["outlet_limit"]
@@ -464,7 +471,9 @@ with overview_tab:
                 delta(summary, controller, "mean_p_dc"),
             )
             columns[1].metric(
-                "Mean PUE", f"{selected['mean_pue'].mean():.2f}", delta(summary, controller, "mean_pue")
+                "Mean PUE",
+                f"{selected['mean_pue'].mean():.2f}",
+                delta(summary, controller, "mean_pue"),
             )
             columns[2].metric(
                 "Mean outlet",
@@ -493,13 +502,29 @@ with overview_tab:
                 surface_outlet = outlet_slot.slider(
                     "Surface outlet temperature (°C)", 15.0, 35.0, 25.0, 0.5
                 )
-                st.plotly_chart(pue_surface(context, configuration, surface_outlet), width="stretch")
+                st.plotly_chart(
+                    pue_surface(context, configuration, surface_outlet), width="stretch"
+                )
             heat, trade = st.columns(2)
             with card(heat, "Scenario map", "Grey n/a cells have no evaluated steps."):
                 metric = st.selectbox(
-                    "Metric", ["episode_violation_rate", "mean_steps_survived", "mean_p_dc", "mean_pue"]
+                    "Metric",
+                    [
+                        "episode_violation_rate",
+                        "mean_steps_survived",
+                        "mean_p_dc",
+                        "mean_pue",
+                        "mean_outlet_temperature",
+                    ],
                 )
-                st.plotly_chart(scenario_heatmap(selected, metric, context.held_out_scenarios))
+                st.plotly_chart(
+                    scenario_heatmap(
+                        selected,
+                        metric,
+                        context.held_out_scenarios,
+                        st.session_state["outlet_limit"],
+                    )
+                )
             with card(
                 trade,
                 "Controller trade-offs",
@@ -533,7 +558,9 @@ with overview_tab:
                         ay=(-1) ** i * (20 + 8 * i),
                         arrowhead=0,
                     )
-                figure.update_xaxes(title="Mean power (kW)", rangemode="normal" if zoom else "tozero")
+                figure.update_xaxes(
+                    title="Mean power (kW)", rangemode="normal" if zoom else "tozero"
+                )
                 figure.update_yaxes(
                     title="Episodes with any violation",
                     tickformat=".0%",
@@ -610,7 +637,9 @@ with compare_tab:
                     "max_violation": "Peak excess (°C)",
                     "switching_rate": "Switching",
                     "mean_steps_survived": "Mean steps survived",
-                    "episode_violation_rate": "Episodes with any violation",
+                    "episode_violation_rate": st.column_config.ProgressColumn(
+                        "Episodes with any violation", min_value=0, max_value=1, format="percent"
+                    ),
                     "violating_step_share": "Violating steps (%)",
                     "reward": "Return / step",
                 },
@@ -739,9 +768,9 @@ with diagnostics_tab:
                 )
                 flags = details.loc[details.spurious]
                 for variant, flagged in flags.groupby("variant"):
-                    st.write(f"{variant}: {', '.join(flagged.scenario.unique())}")
+                    st.write(f"⚠ {variant}: {', '.join(flagged.scenario.unique())}")
                 if flags.empty:
-                    st.write("No scenarios flagged.")
+                    st.write("✓ No scenarios flagged.")
                 st.dataframe(
                     details.drop(columns="spurious").style.format(precision=4), hide_index=True
                 )
@@ -826,7 +855,7 @@ with diagnostics_tab:
                             texttemplate="%{z:.3f}",
                             x=errors.columns,
                             y=errors.index,
-                            colorscale="Blues",
+                            colorscale=TEMPERATURE_RAMP,
                         )
                     )
                 ),
@@ -886,6 +915,11 @@ with source_tab:
             with card(
                 st, "AAU observations", "Filter the rows and columns to inspect or download."
             ):
+                low, median, high = filtered["Outlet Avg Temp"].quantile([0, 0.5, 1])
+                st.progress(
+                    float((median - low) / (high - low)) if high > low else 0.0,
+                    text=f"Outlet range {low:.1f}–{high:.1f} °C · median {median:.1f} °C",
+                )
                 selected_columns = st.multiselect(
                     "Columns",
                     list(filtered.columns),
