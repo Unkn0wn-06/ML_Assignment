@@ -33,7 +33,7 @@ from ui.charts import (
 from ui.room3d import render_room
 from ui.theme import CONTROLLER_COLOURS, apply_control_room_theme, card
 
-st.set_page_config(page_title="Cooling Control Room", page_icon="❄️", layout="wide")
+st.set_page_config(page_title="Cooling RL", page_icon="❄️", layout="wide")
 apply_control_room_theme(st)
 
 
@@ -180,7 +180,7 @@ def pue_surface(context: ExperimentContext, configuration: str, outlet: float) -
 
 
 st.markdown('<div class="control-kicker">AAU · DATA-DRIVEN SIMULATOR</div>', unsafe_allow_html=True)
-st.markdown('<div class="control-title">Cooling control room</div>', unsafe_allow_html=True)
+st.markdown('<div class="control-title">Cooling RL</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="safety-banner"><strong>Simulation only.</strong> AAU files contain no logged control actions; cooling supply temperature is a proxy. Never use this dashboard to control live cooling equipment.</div>',
     unsafe_allow_html=True,
@@ -364,7 +364,7 @@ elif run:
     st.error(data_error or "Choose a valid AAU data folder.")
 
 overview_tab, compare_tab, diagnostics_tab, source_tab = st.tabs(
-    ["Overview", "Compare controllers", "Model diagnostics", "Source data"]
+    ["Viewer", "Compare", "Diagnostics", "Source data"]
 )
 context: ExperimentContext | None = st.session_state.get("context")
 results: dict[str, ControllerResult] = st.session_state.get("controller_results", {})
