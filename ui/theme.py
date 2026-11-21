@@ -37,6 +37,8 @@ def apply_control_room_theme(st) -> None:
         [data-testid="stAppViewContainer"] {font-family:Inter,"Segoe UI",system-ui,sans-serif;}
         [role="tab"], [class*="st-key-panel_"] strong {text-transform:uppercase;letter-spacing:.1em;font-size:11px;}
         [role="tab"][aria-selected="true"] {color:#38bdf8;}
+        iframe[srcdoc] {height:clamp(340px,calc(100dvh - 410px),780px);}
+        [data-testid="stMainBlockContainer"] {padding-top:2.6rem;}
         </style>
         """,
         unsafe_allow_html=True,

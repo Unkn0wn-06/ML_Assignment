@@ -68,17 +68,17 @@ function setMode(value){
  document.querySelectorAll('.mode button').forEach(b=>b.setAttribute('aria-pressed',b.textContent===mode));
  room?.mode(mode);setLegend();update();
 }
-function pause(){clearInterval(timer);timer=null;$('play').textContent='▶';$('play').setAttribute('aria-label','Play replay');}
-function play(){pause();$('play').textContent='Ⅱ';$('play').setAttribute('aria-label','Pause replay');timer=setInterval(()=>{
+function pause(){$('replay').checked=false;clearInterval(timer);timer=null;$('play').textContent='▶';$('play').setAttribute('aria-label','Play replay');}
+function play(){pause();$('replay').checked=true;$('play').textContent='Ⅱ';$('play').setAttribute('aria-label','Pause replay');timer=setInterval(()=>{
  $('step').value=(+$('step').value+1)%frames.length;update();},600/parseFloat($('speed').value));}
-$('step').max=frames.length-1;$('end').textContent='Step '+data.horizon;$('step').oninput=update;
+$('step').max=frames.length-1;$('end').textContent='Step '+data.horizon;$('step').oninput=()=>{pause();update();};
 $('compare').disabled=!data.comparison.length;$('compare').onchange=update;
 $('play').onclick=()=>timer?pause():play();$('speed').onchange=()=>{if(timer)play();};
-$('replay').onchange=()=>{pause();$('play').disabled=$('step').disabled=!$('replay').checked;};
+$('replay').onchange=()=>{if($('replay').checked)play();else pause();};
 $('home').onclick=()=>room?.home();$('legendToggle').onclick=()=>$('keys').hidden=!$('keys').hidden;
 const main=document.querySelector('main');
 function togglePanel(){main.classList.toggle(document.body.classList.contains('narrow')?'open':'closed');}
 $('inspect').onclick=$('close').onclick=togglePanel;
 new ResizeObserver(()=>document.body.classList.toggle('narrow',innerWidth<1100)).observe(document.body);
 document.querySelectorAll('.mode button').forEach(btn=>btn.onclick=()=>setMode(btn.textContent));
-setMode('3D');
+setMode('3D');play();

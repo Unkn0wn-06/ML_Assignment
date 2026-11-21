@@ -70,13 +70,13 @@ Choose **3D** to orbit the room by dragging and zoom with the wheel. **Plan** lo
 
 **Loop** follows the blue supply and red return circuits. Temperature labels track the selected step. The histogram uses observed AAU rows from the selected scenario. Configuration summaries pool the selected controller's evaluated episodes across loads and seeds. A missing configuration is labelled explicitly.
 
-Scrub from step zero (the recorded initial state) to the last executed step. The end chip gives the requested horizon. Play animates the readings at the selected speed. Switch on **Compare** to inspect the other controller at the same scenario, initial row, seed and step. The inspector marks where a shorter comparison episode ends.
+Scrub from step zero (the recorded initial state) to the last executed step. The end chip gives the requested horizon. Autoplay starts enabled. Pausing or scrubbing stops playback at the selected step. The viewer initially prioritises the highest episode-violation rate among evaluated full-load held-out scenarios. Switch on **Compare** to inspect the other controller at the same scenario, initial row, seed and step. The inspector marks where a shorter comparison episode ends.
 
 Rack placement, gradients and zone markers are schematic. Every zone displays the same underlying readings. AAU provides IT and total facility power; it does not separately meter cooling power.
 
 **1600 × 900 views** · [3D viewer](docs/ui/viewer-3d.png) · [Plan](docs/ui/viewer-plan.png) · [Cooling loop](docs/ui/viewer-loop.png) · [Compare](docs/ui/compare-900.png) · [Diagnostics](docs/ui/diagnostics-900.png) · [Source data](docs/ui/source-data-900.png). To repeat the captures on Windows with Edge and Playwright installed, run `python scripts/capture_dashboard.py`. The three viewer captures show the component at full viewport width. The other captures include the Streamlit experiment controls.
 
-The design uses the same light room and dark loop as the previews. Plan shares the room geometry and camera controls. The inspector uses real scenario-wide readings, and the configuration list counts evaluated episodes. Streamlit keeps its navigation above the component so Compare, Diagnostics and Source data retain their filters and downloads. The six captures use seed 42.
+The design uses the same light room and dark loop as the previews. Plan shares the room geometry and camera controls. The inspector uses real scenario-wide readings, and the configuration list counts evaluated episodes. Streamlit keeps its navigation above the component so Compare, Diagnostics and Source data retain their filters and downloads. The captures use seed 42. See also the [1000 px dashboard](docs/ui/viewer-dashboard-1000.png) and the loop at [1440 × 900](docs/ui/viewer-loop-1440x900.png) and [1920 × 1080](docs/ui/viewer-loop-1920x1080.png).
 
 ### Episode and simulator comparison
 

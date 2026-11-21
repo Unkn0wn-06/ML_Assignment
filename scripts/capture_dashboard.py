@@ -45,17 +45,24 @@ try:
         page.goto(url)
         page.get_by_role("spinbutton", name="Consecutive training seeds").fill("1")
         page.get_by_role("spinbutton", name="Consecutive training seeds").press("Enter")
+        page.get_by_role("combobox", name="Evaluation split").click()
+        page.get_by_role("option", name="Load generalisation: hold out 100%").click()
         page.get_by_role("button", name="Run experiment").click(timeout=60000)
         picker = page.get_by_role("combobox", name="Replay scenario")
         picker.wait_for(timeout=300000)
-        picker.fill("PlateWallTest_75percent")
-        page.get_by_role("option", name="PlateWallTest_75percent", exact=False).click()
         frame_element = page.locator("iframe[srcdoc]").filter(visible=True).first
         page.wait_for_function(
-            """Array.from(document.querySelectorAll('iframe[srcdoc]')).some(el=>el.srcdoc.includes('PlateWallTest_75percent') && el.contentDocument?.querySelector('#room canvas'))""",
+            """Array.from(document.querySelectorAll('iframe[srcdoc]')).some(el=>el.contentDocument?.querySelector('#room canvas'))""",
             timeout=120000,
         )
         # Capture the very same component document, without cropping it behind Streamlit's toolbar.
+        page.set_viewport_size({"width": 1600, "height": 1000})
+        page.locator('[data-testid="stMain"]').evaluate("el=>el.scrollTop=0")
+        page.wait_for_timeout(500)
+        bounds = frame_element.bounding_box()
+        assert bounds["y"] + bounds["height"] <= 1000, bounds
+        page.screenshot(path=destination / "viewer-dashboard-1000.png")
+        page.set_viewport_size(viewport)
         markup = frame_element.get_attribute("srcdoc")
         scene = browser.new_page(viewport=viewport)
         errors = []
@@ -63,6 +70,7 @@ try:
         scene.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
         scene.set_content(markup)
         scene.wait_for_selector("#room canvas")
+        scene.locator("#replay").uncheck()
         assert scene.evaluate("""() => temperature(data.limit-5.01) === palette[0] &&
             temperature(data.limit-5) === palette[1] && temperature(data.limit+.01) === palette[6] &&
             document.querySelector('#keys').innerText.includes(String(data.limit-5))""")
@@ -112,6 +120,10 @@ try:
             return labels.every((a,i)=>labels.slice(i+1).every(b=>a.right<=b.left || b.right<=a.left || a.bottom<=b.top || b.bottom<=a.top));
         }""")
         scene.screenshot(path=destination / "viewer-loop.png")
+        for width, height in [(1440, 900), (1920, 1080)]:
+            scene.set_viewport_size({"width": width, "height": height})
+            scene.screenshot(path=destination / f"viewer-loop-{width}x{height}.png")
+        scene.set_viewport_size(viewport)
         scene.locator("#play").click()
         scene.wait_for_function("Number(document.querySelector('#step').value) > 9")
         scene.locator("#play").click()
@@ -127,6 +139,11 @@ try:
             page.wait_for_timeout(800)
             assert not page.locator('[data-testid="stException"]').count()
             page.screenshot(path=destination / (name.lower().replace(" ", "-") + "-900.png"))
+        page.get_by_role("tab", name="Compare", exact=True).click()
+        heading = page.get_by_text("Reward vs fixed setpoint", exact=True)
+        heading.evaluate("el=>el.scrollIntoView({block:'start'})")
+        page.wait_for_timeout(500)
+        page.screenshot(path=destination / "training-diagnostics-900.png")
         browser.close()
 finally:
     server.terminate()

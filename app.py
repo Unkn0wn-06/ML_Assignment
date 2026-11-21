@@ -402,7 +402,11 @@ with overview_tab:
         )
     else:
         selectors = st.columns([1, 0.65, 1.5, 0.65, 1])
-        controller = selectors[0].selectbox("Viewer controller", list(results))
+        controller = selectors[0].selectbox(
+            "Viewer controller",
+            list(results),
+            index=list(results).index("Rule-based") if "Rule-based" in results else 0,
+        )
         selected = summary.loc[summary["controller"] == controller]
         trajectory = results[controller].trajectories
         replay_seed = (
@@ -411,14 +415,17 @@ with overview_tab:
             else trajectory.seed.iloc[0]
         )
         trajectory = trajectory.loc[trajectory.seed == replay_seed]
-        groups = trajectory.groupby(["scenario", "episode"], sort=False)
-        interesting = [
-            key
-            for key, rows in groups
-            if rows.action.nunique() > 1 or rows.step.max() < rows.horizon.iloc[0]
+        full_load = selected.loc[selected.load_percent.eq(100)]
+        held = full_load.loc[full_load.scenario.isin(context.held_out_scenarios)]
+        candidates = held if not held.empty else full_load if not full_load.empty else selected
+        default_scenario = candidates.groupby("scenario").any_violation.mean().idxmax()
+        episodes = selected.loc[
+            (selected.scenario == default_scenario) & (selected.seed == replay_seed)
         ]
-        default_scenario, default_episode = (
-            interesting[0] if interesting else next(iter(groups.groups))
+        default_episode = (
+            episodes.sort_values(["violation_degree_steps", "episode"], ascending=[False, True])
+            .iloc[0]
+            .episode
         )
         stress = (
             context.evaluation_data.assign(
@@ -599,6 +606,20 @@ with compare_tab:
             "Episode averages across evaluated scenarios. Green highlights the best value, including ties.",
         ):
             table = comparison_table(summary)
+            if context.model.variant == VARIANTS[1] and "Rule-based" in results:
+                baseline = table.loc[table.controller == "Rule-based"].iloc[0]
+                for name in ["Q-Learning", "SARSA"]:
+                    row = table.loc[table.controller == name]
+                    if row.empty:
+                        continue
+                    power_saving = 100 * (1 - row.mean_p_dc.iloc[0] / baseline.mean_p_dc)
+                    hot_change = 100 * (
+                        row.violating_step_share.iloc[0] - baseline.violating_step_share
+                    )
+                    if power_saving > 0 and hot_change > 0:
+                        st.caption(
+                            f"{name} power–safety trade-off versus hysteresis: {power_saving:.2f}% lower mean power and {hot_change:.2f} percentage points more violating steps."
+                        )
             visible = table[
                 [
                     "controller",
@@ -677,6 +698,12 @@ with compare_tab:
                 by_seed = summary.groupby(["controller", "seed"], as_index=False)[metric].mean()
                 bound_fig = go.Figure()
                 for name, group in by_seed.groupby("controller"):
+                    if name in BOUNDS and len(group) == 1:
+                        bound_fig.add_hline(
+                            y=group[metric].iloc[0],
+                            line_dash="dash",
+                            line_color=CONTROLLER_COLOURS[name],
+                        )
                     bound_fig.add_scatter(
                         x=group.seed,
                         y=group[metric],
@@ -781,7 +808,7 @@ with diagnostics_tab:
                 )
         if tabular_rows:
             st.subheader("Tabular policy diagnostics")
-            st.dataframe(pd.DataFrame(tabular_rows), hide_index=True)
+            st.dataframe(pd.DataFrame(tabular_rows).style.format(precision=2), hide_index=True)
         if not context.held_out_scenarios:
             st.info(
                 "All scenarios uses the same rows for fitting and evaluation. Both MAE bars are identical by design."
@@ -825,7 +852,17 @@ with diagnostics_tab:
                 )
             if diagnostics:
                 scores = pd.DataFrame(diagnostics).set_index("variant")
-                st.dataframe(scores.style.format("{:.4f}"))
+                st.dataframe(
+                    scores.rename_axis("Simulator variant")
+                    .rename(
+                        columns={
+                            "P_DC": "Facility power (kW)",
+                            "Outlet Avg Temp": "Outlet temperature (°C)",
+                            "Cooling Return Average": "Return temperature (°C)",
+                        }
+                    )
+                    .style.format("{:.3f}")
+                )
                 for choice in VARIANTS[1:]:
                     worse = [
                         target
@@ -845,8 +882,30 @@ with diagnostics_tab:
                     st.write(f"⚠ {variant}: {', '.join(flagged.scenario.unique())}")
                 if flags.empty:
                     st.write("✓ No scenarios flagged.")
-                st.dataframe(
-                    details.drop(columns="spurious").style.format(precision=4), hide_index=True
+                response = (
+                    details.assign(outlet_change=details["Outlet Avg Temp"].abs())
+                    .groupby(["variant", "shift"], as_index=False)
+                    .outlet_change.mean()
+                )
+                response["shift"] = response["shift"].map(lambda shift: f"{shift:+.1f} °C")
+                st.plotly_chart(
+                    dark_layout(
+                        px.bar(
+                            response,
+                            x="shift",
+                            y="outlet_change",
+                            color="variant",
+                            barmode="group",
+                            labels={
+                                "shift": "Supply shift (°C)",
+                                "variant": "Simulator variant",
+                                "outlet_change": "Mean absolute outlet change (°C)",
+                            },
+                        )
+                    )
+                )
+                st.caption(
+                    "Each bar averages the absolute predicted outlet response across evaluated scenarios. Small changes indicate limited simulated cooling leverage."
                 )
                 st.caption(
                     "Single-state spikes from a random forest are steps in its predictions and should not be read as physical responses."

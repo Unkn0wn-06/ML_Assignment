@@ -82,4 +82,4 @@ def render_room(replay, comparison, results, selected, raw, outcome, limit):
     for name in ["viewer.css", "three.min.js", "room.js", "loop.js", "viewer.js"]:
         html = html.replace("{{" + name + "}}", (STATIC / name).read_text(encoding="utf-8"))
     html = html.replace("{{payload}}", json.dumps(payload, allow_nan=False).replace("<", r"\u003c"))
-    components.html(html, height=860)
+    components.html(html, height=590)
