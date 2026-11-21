@@ -34,7 +34,7 @@ def main() -> None:
     parser.add_argument("--artifacts-dir", type=Path, default=Path("artifacts"))
     arguments = parser.parse_args()
     config = json.loads(arguments.config.read_text())
-    training = config["q_learning"]
+    training = {**config["q_learning"], **config.get(arguments.algorithm, {})}
     data = load_csv_directory(arguments.data_dir)
     transitions = make_transition_table(data)
     model = TransitionModel(random_state=arguments.seed, n_estimators=arguments.trees).fit(
@@ -79,6 +79,7 @@ def main() -> None:
                     "min_visits",
                     "decay_fraction",
                     "legacy_state",
+                    "eval_every",
                 )
                 if key in training
             },

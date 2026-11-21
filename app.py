@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 from time import monotonic
 
@@ -25,10 +26,12 @@ from data_centre_rl.transition_model import VARIANTS
 from ui.charts import (
     action_distribution_chart,
     dark_layout,
+    final_difference,
     learning_curve_chart,
     paired_savings,
     replay_chart,
     scenario_heatmap,
+    training_chart,
 )
 from ui.room3d import render_room
 from ui.theme import CONTROLLER_COLOURS, TEMPERATURE_RAMP, apply_control_room_theme, card
@@ -226,6 +229,7 @@ with st.sidebar:
             st.selectbox("Tabular state", ["Safety state", "Legacy 5-bin state"])
             == "Legacy 5-bin state"
         )
+        checkpoint_config = json.loads((Path(__file__).parent / "configs/base.json").read_text())
         training_options = {
             "alpha": st.number_input("Alpha", 0.01, 1.0, 0.1),
             "gamma": st.number_input("Gamma", 0.0, 1.0, 0.9),
@@ -308,6 +312,9 @@ if run and data is not None:
                         min_hold_steps,
                         legacy_state,
                         tuple(training_options.items()),
+                        checkpoint_config["sarsa" if controller == "SARSA" else "q_learning"][
+                            "eval_every"
+                        ],
                         legacy_termination,
                         tie_margin,
                         zero_initialisation,
@@ -328,7 +335,12 @@ if run and data is not None:
                                 release_band=release_band,
                                 min_hold_steps=min_hold_steps,
                                 legacy_state=legacy_state,
-                                training_options=training_options,
+                                training_options={
+                                    **training_options,
+                                    "eval_every": checkpoint_config[
+                                        "sarsa" if controller == "SARSA" else "q_learning"
+                                    ]["eval_every"],
+                                },
                                 legacy_termination=legacy_termination,
                                 tie_margin=tie_margin,
                                 zero_initialisation=zero_initialisation,
@@ -654,15 +666,44 @@ with compare_tab:
         )
         left, right = st.columns(2)
         with card(
-            left, "Learning curves", "Reward per step, averaged over ten training observations."
+            left,
+            "Training diagnostics",
+            "Tabular training episodes use matched fixed-setpoint starts.",
         ):
-            if not curves.empty:
-                st.plotly_chart(learning_curve_chart(curves), width="stretch")
-                st.caption(
-                    "Only one seed: uncertainty across seeds is unavailable."
-                    if curves.seed.nunique() == 1
-                    else "Shaded band spans ±1 standard deviation across seeds."
+            if "reward_vs_baseline" in curves:
+                tabular = curves.dropna(subset=["reward_vs_baseline"])
+                st.markdown("**Reward vs fixed setpoint**")
+                st.plotly_chart(training_chart(tabular, "reward_vs_baseline"))
+                st.caption(final_difference(tabular))
+                st.markdown("**Greedy evaluation on fixed starts**")
+                metric = st.selectbox(
+                    "Checkpoint metric",
+                    [
+                        "eval_reward",
+                        "eval_violating_steps",
+                        "eval_power",
+                        "eval_switching",
+                        "eval_fallback",
+                    ],
+                    format_func={
+                        "eval_reward": "Reward per step",
+                        "eval_violating_steps": "Violating-step share",
+                        "eval_power": "Mean facility power (kW)",
+                        "eval_switching": "Switching rate",
+                        "eval_fallback": "Fallback-to-maintain share",
+                    }.get,
                 )
+                st.plotly_chart(training_chart(tabular, metric))
+                st.caption(
+                    "Twelve fixed training-scenario starts. Bands show ±1 standard deviation across seeds when available."
+                )
+                st.markdown("**Exploration and fallback to maintain**")
+                st.plotly_chart(training_chart(tabular, "epsilon"))
+            deep = (
+                curves[curves.controller.isin(["DQN", "PPO"])] if "controller" in curves else curves
+            )
+            if not deep.empty:
+                st.plotly_chart(learning_curve_chart(deep))
         with card(right, "Action distribution", "Share of evaluated steps for each controller."):
             st.plotly_chart(action_distribution_chart(trajectories), width="stretch")
         if "Rule-based" in results and len(results) > 1:

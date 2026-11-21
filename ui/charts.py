@@ -252,3 +252,94 @@ def paired_savings(metrics):
             }
         )
     return pd.DataFrame(rows)
+
+
+def training_chart(curves, metric):
+    figure = go.Figure()
+    for name, group in curves.groupby("controller"):
+        color = CONTROLLER_COLOURS[name]
+        values = group.pivot(index="step", columns="seed", values=metric).dropna(how="all")
+        if metric == "reward_vs_baseline":
+            for seed in values:
+                figure.add_scatter(
+                    x=values.index,
+                    y=values[seed],
+                    mode="lines",
+                    line_color=color,
+                    opacity=0.12,
+                    legendgroup=name,
+                    showlegend=False,
+                )
+            values = values.rolling(40, min_periods=1).mean()
+        mean = values.mean(axis=1)
+        if metric.startswith("eval_") and values.shape[1] > 1:
+            spread = values.std(axis=1)
+            figure.add_scatter(
+                x=mean.index, y=mean - spread, line_width=0, showlegend=False, legendgroup=name
+            )
+            figure.add_scatter(
+                x=mean.index,
+                y=mean + spread,
+                line_width=0,
+                fill="tonexty",
+                fillcolor=color,
+                opacity=0.17,
+                showlegend=False,
+                legendgroup=name,
+            )
+        figure.add_scatter(
+            x=mean.index,
+            y=mean,
+            name=name,
+            legendgroup=name,
+            line_color=color,
+            mode="lines+markers" if metric.startswith("eval_") else "lines",
+        )
+        if metric == "epsilon":
+            fallback = group.groupby("step").eval_fallback.mean().dropna()
+            figure.add_scatter(
+                x=fallback.index,
+                y=fallback,
+                name=name + " · fallback",
+                line_dash="dot",
+                line_color=color,
+                mode="lines+markers",
+            )
+    if metric == "reward_vs_baseline":
+        figure.add_hline(y=0, line_dash="dash", annotation_text="Fixed setpoint")
+    figure.update_xaxes(title="Training episode")
+    return dark_layout(figure, height=260 if metric == "epsilon" else 350)
+
+
+def final_difference(curves):
+    from scipy.stats import t
+
+    notes = []
+    for name, group in curves.groupby("controller"):
+        final = (
+            group.sort_values("step")
+            .groupby("seed")
+            .tail(40)
+            .groupby("seed")
+            .reward_vs_baseline.mean()
+        )
+        mean = final.mean()
+        if len(final) < 2:
+            notes.append(
+                f"{name}: final mean {mean:+.3f}; one seed cannot estimate a between-seed interval."
+            )
+            continue
+        half = t.ppf(0.975, len(final) - 1) * final.sem()
+        finding = (
+            "No measurable improvement over fixed setpoint"
+            if mean - half <= 0 <= mean + half
+            else (
+                "Higher reward than fixed setpoint"
+                if mean > 0
+                else "Lower reward than fixed setpoint"
+            )
+        )
+        notes.append(
+            f"{name}: {finding} (last 40 episodes, mean {mean:+.3f}, 95% CI {mean - half:+.3f} to {mean + half:+.3f})."
+        )
+    return " ".join(notes)

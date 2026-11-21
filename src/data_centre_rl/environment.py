@@ -131,7 +131,12 @@ class DataCenterCoolingEnv(gym.Env[np.ndarray, int]):
             raise ValueError(f"Unknown scenario: {selected}")
         self._frame = self.frames[selected]
         self._rows = self.records[selected]
-        self._index = int(self.np_random.choice(self.start_rows[selected]))
+        start = (options or {}).get("start_row")
+        if start is not None and start not in self.start_rows[selected]:
+            raise ValueError("Ineligible start row for selected scenario")
+        self._index = int(
+            self.np_random.choice(self.start_rows[selected]) if start is None else start
+        )
         self._steps = 0
         self._last_action = 1
         row = self._rows[self._index]
