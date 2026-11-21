@@ -8,14 +8,23 @@ from time import perf_counter
 
 import pandas as pd
 
-from .baselines import FixedPolicy, RuleBasedPolicy, ThresholdPolicy
+from .baselines import (
+    AlwaysMaxCooling,
+    AlwaysMinCooling,
+    FixedPolicy,
+    RuleBasedPolicy,
+    ThresholdPolicy,
+)
 from .data import TARGET_COLUMNS, make_transition_table, scenario_split
 from .environment import DataCenterCoolingEnv
 from .evaluation import EvaluationResult, evaluate_policy
 from .training import model_action, train_dqn, train_ppo, train_tabular
 from .transition_model import VARIANTS, TransitionModel
 
+BOUNDS = {"Bound: max cooling": AlwaysMaxCooling, "Bound: min cooling": AlwaysMinCooling}
+
 CONTROLLERS = (
+    *BOUNDS,
     "Fixed setpoint",
     "Rule-based",
     "Q-Learning",
@@ -173,6 +182,7 @@ def run_controller(
         termination_penalty_per_step=termination_penalty_per_step,
     )
     if not train_env.scenarios and controller not in {
+        *BOUNDS,
         "Fixed setpoint",
         "Rule-based",
         "Rule-based (no hysteresis)",
@@ -181,7 +191,10 @@ def run_controller(
     started = perf_counter()
     learning_curve = pd.DataFrame(columns=["step", "reward"])
     agent = None
-    if controller == "Fixed setpoint":
+    if controller in BOUNDS:
+        agent = BOUNDS[controller]()
+        action_fn = agent.predict
+    elif controller == "Fixed setpoint":
         agent = FixedPolicy()
         action_fn = agent.predict
     elif controller == "Rule-based (no hysteresis)":

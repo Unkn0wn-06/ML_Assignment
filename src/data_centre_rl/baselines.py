@@ -87,3 +87,19 @@ class RuleBasedPolicy(ThresholdPolicy):
         )[self.mode]
         detail = "" if release is None else f", release at {release:g} °C"
         return f"{mode} mode{detail}, held {self.held}/{self.min_hold_steps} steps"
+
+
+class AlwaysMaxCooling:
+    def predict(self, observation):
+        return 2
+
+    def explain(self, observation):
+        return "Maximum cooling bound: lower supply to the observed minimum."
+
+
+class AlwaysMinCooling:
+    def predict(self, observation):
+        return 0
+
+    def explain(self, observation):
+        return "Minimum cooling bound: raise supply to the observed maximum."

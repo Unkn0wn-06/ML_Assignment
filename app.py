@@ -14,6 +14,7 @@ import streamlit as st
 
 from data_centre_rl.data import STATE_COLUMNS, load_csv_directory
 from data_centre_rl.experiments import (
+    BOUNDS,
     CONTROLLERS,
     ControllerResult,
     ExperimentContext,
@@ -195,7 +196,7 @@ with st.sidebar:
     data_directory = st.text_input("AAU data folder", "data/raw/AAU")
     st.caption("CONTROLLERS")
     controllers = st.multiselect(
-        "Controllers", available, default=["Rule-based", "Q-Learning", "SARSA"]
+        "Controllers", available, default=["Rule-based", "Q-Learning", "SARSA", *BOUNDS]
     )
     if disabled:
         st.info('DQN and PPO require `python -m pip install -e ".[deep-rl]"`.')
@@ -658,6 +659,38 @@ with compare_tab:
                 hide_index=True,
                 width="stretch",
             )
+        if any(name in results for name in BOUNDS):
+            with card(
+                st,
+                "Cooling bounds",
+                "Grey dashed lines show the two constant-action policies on the same starts.",
+            ):
+                metric = st.selectbox(
+                    "Compare bound metric",
+                    ["episode_violation_rate", "mean_p_dc", "mean_pue"],
+                    format_func={
+                        "episode_violation_rate": "Episodes with any violation",
+                        "mean_p_dc": "Mean facility power (kW)",
+                        "mean_pue": "Mean PUE",
+                    }.get,
+                )
+                by_seed = summary.groupby(["controller", "seed"], as_index=False)[metric].mean()
+                bound_fig = go.Figure()
+                for name, group in by_seed.groupby("controller"):
+                    bound_fig.add_scatter(
+                        x=group.seed,
+                        y=group[metric],
+                        name=name,
+                        mode="lines+markers",
+                        line={
+                            "color": CONTROLLER_COLOURS[name],
+                            "dash": "dash" if name in BOUNDS else "solid",
+                        },
+                    )
+                bound_fig.update_xaxes(title="Seed", dtick=1)
+                if metric == "episode_violation_rate":
+                    bound_fig.update_yaxes(tickformat=".0%")
+                st.plotly_chart(dark_layout(bound_fig))
         trajectories = pd.concat(
             [result.trajectories for result in results.values()], ignore_index=True
         )

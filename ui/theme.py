@@ -3,6 +3,8 @@
 TEMPERATURE_RAMP = ["#1d2a73", "#2f6fe4", "#38bdf8", "#4ade80", "#facc15", "#fb923c", "#ef4444"]
 
 CONTROLLER_COLOURS = {
+    "Bound: max cooling": "#b9c4d4",
+    "Bound: min cooling": "#8895a8",
     "Fixed setpoint": "#94a3b8",
     "Rule-based (no hysteresis)": "#34d399",
     "Rule-based": "#38bdf8",
